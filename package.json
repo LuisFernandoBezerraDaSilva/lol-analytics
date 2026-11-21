@@ -1,0 +1,24 @@
+{
+  "name": "lol-analytics",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Coleta o seu histórico público do League of Legends pela API oficial da Riot e gera relatórios próprios.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "sync": "node --disable-warning=ExperimentalWarning src/cli.ts sync",
+    "relatorio": "node --disable-warning=ExperimentalWarning src/cli.ts relatorio",
+    "exportar": "node --disable-warning=ExperimentalWarning src/cli.ts exportar",
+    "elo": "node --disable-warning=ExperimentalWarning src/cli.ts elo",
+    "reprocessar": "node --disable-warning=ExperimentalWarning src/cli.ts reprocessar",
+    "ajuda": "node --disable-warning=ExperimentalWarning src/cli.ts ajuda",
+    "test": "node --disable-warning=ExperimentalWarning --test \"test/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.0",
+    "typescript": "^5.9.0"
+  }
+}
