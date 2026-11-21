@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, describe, it } from 'node:test';
+import { parseEnv } from 'node:util';
 import { criarApi, type Requisicao } from '../src/app/api.ts';
 import { validar } from '../src/configurar.ts';
 import { abrirBanco } from '../src/db.ts';
@@ -112,7 +113,11 @@ describe('API do app', () => {
     assert.match(env, /^# comentario$/m);
     assert.match(env, /^DB_PATH=data\/lol\.db$/m);
     assert.match(env, /^RIOT_API_KEY=RGAPI-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee$/m);
-    assert.match(env, /^RIOT_ID=Meu Nome#BR1$/m);
+    assert.match(env, /^RIOT_ID="Meu Nome#BR1"$/m);
+    // O mesmo leitor que o Node usa no process.loadEnvFile precisa devolver o Riot ID inteiro.
+    const lido = parseEnv(env);
+    assert.equal(lido.RIOT_ID, 'Meu Nome#BR1');
+    assert.equal(lido.RIOT_API_KEY, 'RGAPI-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee');
     assert.match(env, /^RIOT_REGION=europe$/m);
     assert.equal((await chamar('POST', '/api/config', { apiKey: 'nao-e-chave' })).status, 400);
     assert.equal((await chamar('POST', '/api/config', { riotId: 'sem tag' })).status, 400);

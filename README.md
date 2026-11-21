@@ -76,7 +76,9 @@ Copy-Item .env.example .env
 notepad .env
 ```
 
-No `.env`, preencha `RIOT_API_KEY` e `RIOT_ID` (Nome#TAG; várias contas separadas por vírgula).
+No `.env`, preencha `RIOT_API_KEY` e `RIOT_ID`. O Riot ID vai **entre aspas**, porque sem elas
+tudo depois do `#` vira comentário: `RIOT_ID="SeuNome#BR1"`. Várias contas ficam separadas por
+vírgula dentro das mesmas aspas.
 
 ## 3. Usar
 

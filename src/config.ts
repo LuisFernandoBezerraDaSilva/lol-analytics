@@ -53,6 +53,9 @@ export function carregarConfig(): Config {
   }
   const ids = (process.env.RIOT_ID ?? '').split(',').filter((s) => s.trim());
   if (ids.length === 0) throw new Error('RIOT_ID não configurado no .env (formato Nome#TAG).');
+  if (ids.some((id) => !id.includes('#'))) {
+    throw new Error('RIOT_ID sem a TAG. No .env, use aspas: RIOT_ID="Nome#TAG" (sem aspas, o # vira comentário).');
+  }
   return {
     apiKey,
     riotIds: ids.map(parseRiotId),

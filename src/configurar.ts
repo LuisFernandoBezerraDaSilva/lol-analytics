@@ -64,7 +64,7 @@ export function validar(c: NovaConfig): Record<string, string> {
     const ids = c.riotId.split(',').map((s) => s.trim()).filter(Boolean);
     for (const id of ids) {
       parseRiotId(id);
-      if (/[\r\n=]/.test(id) || id.length > 40) throw new Error(`Riot ID inválido: ${id}`);
+      if (/[\r\n="'`\\]/.test(id) || id.length > 40) throw new Error(`Riot ID inválido: ${id}`);
     }
     valores.RIOT_ID = ids.join(',');
   }
@@ -78,6 +78,11 @@ export function validar(c: NovaConfig): Record<string, string> {
   return valores;
 }
 
+/** Como o valor vai escrito no .env: o Riot ID entre aspas, porque o # sem aspas vira comentário. */
+export function linhaEnv(chave: string, valor: string): string {
+  return chave === 'RIOT_ID' ? `${chave}="${valor}"` : `${chave}=${valor}`;
+}
+
 /** Atualiza (ou cria) o .env mantendo as outras linhas e os comentários. */
 export function salvarConfig(c: NovaConfig, arquivo = caminhoEnv()): ResumoConfig {
   const valores = validar(c);
@@ -85,7 +90,8 @@ export function salvarConfig(c: NovaConfig, arquivo = caminhoEnv()): ResumoConfi
   let texto = existsSync(arquivo) ? readFileSync(arquivo, 'utf8') : existsSync(modelo) ? readFileSync(modelo, 'utf8') : '';
   for (const [chave, valor] of Object.entries(valores)) {
     const linha = new RegExp(`^${chave}=.*$`, 'm');
-    texto = linha.test(texto) ? texto.replace(linha, () => `${chave}=${valor}`) : `${texto.replace(/\s*$/, '')}\n${chave}=${valor}\n`;
+    const nova = linhaEnv(chave, valor);
+    texto = linha.test(texto) ? texto.replace(linha, () => nova) : `${texto.replace(/\s*$/, '')}\n${nova}\n`;
     process.env[chave] = valor;
   }
   writeFileSync(arquivo, texto, 'utf8');
