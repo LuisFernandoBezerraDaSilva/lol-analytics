@@ -1,6 +1,6 @@
 import type { Linha } from './consultas.ts';
 
-const ROTULOS: Record<string, string> = {
+export const ROTULOS: Record<string, string> = {
   grupo: '',
   jogos: 'Jogos',
   vitorias: 'V',

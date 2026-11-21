@@ -1,0 +1,292 @@
+import type { DatabaseSync } from 'node:sqlite';
+import { analisarPartida, NOME_CAUSA, PADRAO_ANALISE, partidasAnalisaveis, resumirCausas, type OpcoesAnalise } from '../analise/ouro.ts';
+import { carregarConfig } from '../config.ts';
+import { resumoConfig, salvarConfig, type NovaConfig } from '../configurar.ts';
+import { FILAS, idDaFila, nomeDaFila } from '../filas.ts';
+import { AGRUPAMENTOS, abatesPorTempo, agrupar, curvaDeOuro, recentes, resumo, type Linha } from '../relatorios/consultas.ts';
+import { ARQUIVOS_EXPORTACAO, CSV_EXCEL_BR, CSV_PADRAO, dadosExportacao, paraCsv } from '../relatorios/exportar.ts';
+import type { Filtro } from '../relatorios/filtro.ts';
+import { ROTULOS } from '../relatorios/tabela.ts';
+import { ClienteRiot } from '../riot/cliente.ts';
+import { registrarElo, sincronizar } from '../sync.ts';
+
+export interface Requisicao {
+  metodo: string;
+  caminho: string;
+  query: URLSearchParams;
+  corpo?: unknown;
+}
+
+export interface Resposta {
+  status: number;
+  tipo: string;
+  corpo: string;
+  arquivo?: string;
+}
+
+export interface EstadoSync {
+  rodando: boolean;
+  log: string[];
+  inicio: string | null;
+  fim: string | null;
+  erro: string | null;
+}
+
+type Riot = Pick<ClienteRiot, 'contaPorRiotId' | 'idsDePartidas' | 'partida' | 'timeline' | 'ranqueadas'>;
+
+export interface Dependencias {
+  /** Troca o cliente da Riot nos testes. */
+  criarRiot?: () => { riot: Riot; riotIds: Array<{ gameName: string; tagLine: string }> };
+  /** Onde fica o .env (testes usam um arquivo temporário). */
+  arquivoEnv?: string;
+}
+
+class ErroHttp extends Error {
+  readonly status: number;
+  constructor(status: number, msg: string) {
+    super(msg);
+    this.status = status;
+  }
+}
+
+const json = (corpo: unknown, status = 200): Resposta => ({ status, tipo: 'application/json; charset=utf-8', corpo: JSON.stringify(corpo) });
+
+function inteiro(q: URLSearchParams, nome: string, padrao?: number): number | undefined {
+  const v = q.get(nome);
+  if (v === null || v === '') return padrao;
+  const n = Number(v);
+  if (!Number.isInteger(n) || n <= 0) throw new ErroHttp(400, `${nome} precisa ser um inteiro positivo.`);
+  return n;
+}
+
+function filtroDaQuery(q: URLSearchParams): Filtro {
+  try {
+    return {
+      fila: q.get('fila') ? idDaFila(q.get('fila')!) : undefined,
+      dias: inteiro(q, 'dias'),
+      campeao: q.get('campeao') || undefined,
+      posicao: q.get('posicao') || undefined,
+      conta: q.get('conta') || undefined,
+      incluirRemakes: q.get('remakes') === '1',
+    };
+  } catch (e) {
+    throw new ErroHttp(400, e instanceof Error ? e.message : String(e));
+  }
+}
+
+function opcoesAnalise(q: URLSearchParams): OpcoesAnalise {
+  return { limiar: inteiro(q, 'limiar', PADRAO_ANALISE.limiar)!, janela: inteiro(q, 'janela', PADRAO_ANALISE.janela)! };
+}
+
+function tabela(linhas: Linha[]) {
+  const chaves = linhas.length ? Object.keys(linhas[0]!) : [];
+  return { colunas: chaves.map((c) => ({ chave: c, rotulo: ROTULOS[c] ?? c })), linhas };
+}
+
+export function criarApi(db: DatabaseSync, deps: Dependencias = {}) {
+  const sync: EstadoSync = { rodando: false, log: [], inicio: null, fim: null, erro: null };
+
+  const criarRiot =
+    deps.criarRiot ??
+    (() => {
+      const cfg = carregarConfig();
+      return { riot: new ClienteRiot(cfg), riotIds: cfg.riotIds };
+    });
+
+  function estadoBanco() {
+    const n = (sql: string) => (db.prepare(sql).get() as { n: number }).n;
+    const ultima = db.prepare('SELECT max(inicio_ms) AS t FROM partidas').get() as { t: number | null };
+    const contas = db.prepare("SELECT game_name || '#' || tag_line AS conta FROM contas ORDER BY conta").all() as Array<{ conta: string }>;
+    return {
+      partidas: n('SELECT count(*) n FROM partidas'),
+      comTimeline: n('SELECT count(*) n FROM timelines'),
+      contas: contas.map((c) => c.conta),
+      ultimaPartida: ultima.t ? new Date(ultima.t).toISOString() : null,
+    };
+  }
+
+  function iniciarSync(corpo: Record<string, unknown>): void {
+    if (sync.rodando) throw new ErroHttp(409, 'Já existe uma sincronização em andamento.');
+    const { riot, riotIds } = criarRiot();
+    const tudo = corpo.tudo === true;
+    const max = tudo ? Infinity : Number(corpo.max ?? 200);
+    if (!tudo && (!Number.isInteger(max) || max <= 0)) throw new ErroHttp(400, 'max precisa ser um inteiro positivo.');
+    const fila = typeof corpo.fila === 'string' && corpo.fila ? idDaFila(corpo.fila) : undefined;
+    let desde: number | undefined;
+    if (typeof corpo.desde === 'string' && corpo.desde) {
+      const t = Date.parse(`${corpo.desde}T00:00:00`);
+      if (Number.isNaN(t)) throw new ErroHttp(400, 'desde precisa estar no formato AAAA-MM-DD.');
+      desde = Math.floor(t / 1000);
+    }
+    Object.assign(sync, { rodando: true, log: [], inicio: new Date().toISOString(), fim: null, erro: null });
+    const log = (m: string) => {
+      sync.log.push(m);
+      if (sync.log.length > 500) sync.log.splice(0, sync.log.length - 500);
+    };
+    void (async () => {
+      try {
+        const res = await sincronizar(db, riot as ClienteRiot, riotIds, { max, fila, desde, log });
+        for (const r of res) {
+          const extras = [r.semTimeline ? `${r.semTimeline} sem timeline` : '', r.indisponiveis ? `${r.indisponiveis} indisponíveis` : ''].filter(Boolean);
+          log(`${r.conta}: ${r.novas} partida(s) salva(s)${extras.length ? ` (${extras.join(', ')})` : ''}.`);
+          if (Number.isFinite(max) && r.novas >= max) log('Ainda há partidas antigas: sincronize de novo para continuar.');
+        }
+        const n = await registrarElo(db, riot as ClienteRiot);
+        log(`Elo registrado (${n} fila(s)). Pronto.`);
+      } catch (e) {
+        sync.erro = e instanceof Error ? e.message : String(e);
+        log(`Erro: ${sync.erro}`);
+      } finally {
+        sync.rodando = false;
+        sync.fim = new Date().toISOString();
+      }
+    })();
+  }
+
+  function elo(): Linha[] {
+    return db
+      .prepare(
+        `SELECT c.game_name || '#' || c.tag_line AS conta, e.fila, e.tier || ' ' || e.divisao AS elo, e.pdl,
+           e.vitorias, e.derrotas, round(e.vitorias * 100.0 / max(e.vitorias + e.derrotas, 1), 1) AS vitoria_pct, e.registrado_em
+         FROM elo e JOIN contas c ON c.puuid = e.puuid
+         WHERE e.registrado_em = (SELECT max(x.registrado_em) FROM elo x WHERE x.puuid = e.puuid AND x.fila = e.fila)
+         ORDER BY conta, e.fila`,
+      )
+      .all() as Linha[];
+  }
+
+  function ouro(q: URLSearchParams) {
+    const id = q.get('match');
+    let alvo: { match_id: string; participant_id: number } | undefined;
+    if (id) {
+      alvo = db.prepare('SELECT match_id, participant_id FROM v_minhas_partidas WHERE match_id = ? LIMIT 1').get(id) as typeof alvo;
+    } else {
+      alvo = partidasAnalisaveis(db, filtroDaQuery(q), 1)[0];
+    }
+    if (!alvo) throw new ErroHttp(404, 'Nenhuma partida com timeline e oponente de rota.');
+    const an = analisarPartida(db, alvo.match_id, alvo.participant_id, opcoesAnalise(q));
+    if (!an) throw new ErroHttp(404, 'Essa partida não tem timeline ou oponente de rota (ARAM e Arena não têm).');
+    const { ctx } = an;
+    return {
+      partida: {
+        matchId: ctx.matchId,
+        data: ctx.data,
+        vitoria: ctx.vitoria,
+        campeao: ctx.eu.campeao,
+        oponente: ctx.op.campeao,
+        posicao: ctx.eu.posicao,
+      },
+      meuOuro: ctx.ouro.get(ctx.eu.id) ?? [],
+      ouroOponente: ctx.ouro.get(ctx.op.id) ?? [],
+      diferenca: an.diferenca,
+      episodios: an.episodios.map((e) => ({
+        inicio: e.inicio,
+        fim: e.fim,
+        variacao: e.variacao,
+        causa: NOME_CAUSA[e.causaPrincipal],
+        causas: e.causas.map((c) => NOME_CAUSA[c]),
+        leitura: e.leitura.slice(1),
+        dicas: e.dicas,
+        eu: e.eu,
+        oponente: e.oponente,
+      })),
+    };
+  }
+
+  function viradas(q: URLSearchParams) {
+    const o = opcoesAnalise(q);
+    return partidasAnalisaveis(db, filtroDaQuery(q), inteiro(q, 'n', 30)).map((p) => {
+      const an = analisarPartida(db, p.match_id, p.participant_id, o)!;
+      const perda = an.episodios.filter((e) => e.variacao < 0).sort((x, y) => x.variacao - y.variacao)[0];
+      const ganho = an.episodios.filter((e) => e.variacao > 0).sort((x, y) => y.variacao - x.variacao)[0];
+      const resumir = (e: typeof perda) => (e ? { variacao: e.variacao, inicio: e.inicio, fim: e.fim, causa: NOME_CAUSA[e.causaPrincipal] } : null);
+      return {
+        matchId: an.ctx.matchId,
+        data: an.ctx.data,
+        campeao: an.ctx.eu.campeao,
+        oponente: an.ctx.op.campeao,
+        vitoria: an.ctx.vitoria,
+        difFinal: an.diferenca.at(-1) ?? 0,
+        maiorPerda: resumir(perda),
+        maiorGanho: resumir(ganho),
+      };
+    });
+  }
+
+  async function tratar(r: Requisicao): Promise<Resposta> {
+    try {
+      const q = r.query;
+      const corpo = (r.corpo && typeof r.corpo === 'object' ? r.corpo : {}) as Record<string, unknown>;
+      const rota = `${r.metodo} ${r.caminho}`;
+      switch (rota) {
+        case 'GET /api/estado':
+          return json({ config: resumoConfig(), banco: estadoBanco(), sync });
+        case 'POST /api/config':
+          try {
+            return json(salvarConfig(corpo as NovaConfig, deps.arquivoEnv));
+          } catch (e) {
+            throw new ErroHttp(400, e instanceof Error ? e.message : String(e));
+          }
+        case 'GET /api/sync':
+          return json(sync);
+        case 'POST /api/sync':
+          try {
+            iniciarSync(corpo);
+          } catch (e) {
+            if (e instanceof ErroHttp) throw e;
+            throw new ErroHttp(400, e instanceof Error ? e.message : String(e));
+          }
+          return json(sync, 202);
+        case 'GET /api/opcoes': {
+          const campeoes = db.prepare('SELECT DISTINCT campeao FROM v_minhas_partidas ORDER BY campeao').all() as Array<{ campeao: string }>;
+          return json({
+            filas: Object.entries(FILAS).map(([apelido, f]) => ({ apelido, nome: f.nome })),
+            campeoes: campeoes.map((c) => c.campeao),
+            agrupamentos: Object.keys(AGRUPAMENTOS),
+          });
+        }
+        case 'GET /api/resumo':
+          return json(resumo(db, filtroDaQuery(q)) ?? {});
+        case 'GET /api/recentes':
+          return json(tabela(recentes(db, filtroDaQuery(q), inteiro(q, 'n', 30))));
+        case 'GET /api/curva':
+          return json(tabela(curvaDeOuro(db, filtroDaQuery(q), inteiro(q, 'ate', 30))));
+        case 'GET /api/abates':
+          return json(tabela(abatesPorTempo(db, filtroDaQuery(q))));
+        case 'GET /api/viradas':
+          return json(viradas(q));
+        case 'GET /api/ouro':
+          return json(ouro(q));
+        case 'GET /api/causas':
+          return json(resumirCausas(db, filtroDaQuery(q), opcoesAnalise(q)));
+        case 'GET /api/elo':
+          return json(tabela(elo()));
+        case 'POST /api/elo': {
+          const { riot } = criarRiot();
+          await registrarElo(db, riot as ClienteRiot);
+          return json(tabela(elo()));
+        }
+      }
+      if (r.metodo === 'GET' && r.caminho.startsWith('/api/grupo/')) {
+        const por = r.caminho.slice('/api/grupo/'.length);
+        if (!AGRUPAMENTOS[por]) throw new ErroHttp(404, `Agrupamento desconhecido: ${por}`);
+        const linhas = agrupar(db, por, filtroDaQuery(q), inteiro(q, 'minJogos', 1));
+        if (por === 'fila') for (const l of linhas) l.grupo = nomeDaFila(Number(l.grupo));
+        return json(tabela(linhas));
+      }
+      if (r.metodo === 'GET' && r.caminho.startsWith('/api/exportar/')) {
+        const arquivo = r.caminho.slice('/api/exportar/'.length);
+        if (!(ARQUIVOS_EXPORTACAO as readonly string[]).includes(arquivo)) throw new ErroHttp(404, 'Arquivo desconhecido.');
+        const dados = dadosExportacao(db, filtroDaQuery(q))[arquivo as (typeof ARQUIVOS_EXPORTACAO)[number]];
+        const fmt = q.get('formato') === 'padrao' ? CSV_PADRAO : CSV_EXCEL_BR;
+        return { status: 200, tipo: 'text/csv; charset=utf-8', corpo: paraCsv(dados, fmt), arquivo };
+      }
+      throw new ErroHttp(404, 'Rota não encontrada.');
+    } catch (e) {
+      if (e instanceof ErroHttp) return json({ erro: e.message }, e.status);
+      return json({ erro: e instanceof Error ? e.message : String(e) }, 500);
+    }
+  }
+
+  return { tratar, sync };
+}

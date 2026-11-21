@@ -11,6 +11,47 @@ com ajuda do caçador inimigo e não tinha colocado sentinela nos 3 minutos ante
 
 É uma ferramenta pessoal de análise **pós-jogo**: não faz nada durante a partida.
 
+## O app (.exe)
+
+O jeito mais simples de usar é o `lol-analytics.exe`: um arquivo só, sem instalar Node, npm ou banco.
+
+1. Coloque o `lol-analytics.exe` numa pasta sua (por exemplo `Documentos\lol-analytics`).
+2. Dê dois cliques. Ele abre uma janela preta (o servidor local) e o navegador em
+   `http://127.0.0.1:5170`. Para fechar o app, feche a janela preta.
+3. Na primeira vez abre a tela de **Configurações**: preencha o Riot ID, o servidor e a chave da Riot.
+4. Clique em **Sincronizar partidas**. O andamento aparece na própria tela.
+
+Tudo fica ao lado do .exe: o `.env` com a configuração e a pasta `data` com o banco (`lol.db`).
+Para trocar de computador, leve os três juntos.
+
+O app tem abas para a visão geral, as viradas de ouro partida a partida, as causas somadas,
+os grupos (campeão, posição, oponente, mês, duração), a curva de ouro, os abates por tempo,
+a lista de partidas, o elo e a exportação para CSV. Os filtros do topo valem para todas as abas.
+
+Detalhes:
+
+- O app só escuta em `127.0.0.1`, então ninguém da rede acessa.
+- O .exe não é assinado digitalmente. Na primeira execução o Windows pode mostrar
+  "O Windows protegeu o computador": clique em **Mais informações** e **Executar assim mesmo**.
+- Os gráficos usam o [Chart.js](https://www.chartjs.org) (MIT), embutido no .exe e sem internet.
+- O banco é SQLite, o mesmo que já vem dentro do Node (`node:sqlite`).
+
+### Gerar o .exe
+
+Precisa do Node 22.18+ só na máquina que gera o executável:
+
+```powershell
+npm install
+npm run exe        # cria dist\lol-analytics.exe (~80 MB, leva o Node dentro)
+npm run app        # roda o mesmo app sem gerar o .exe, para desenvolver
+```
+
+O .exe usa o [Single Executable Application](https://nodejs.org/api/single-executable-applications.html)
+do próprio Node: o app é empacotado com esbuild e injetado numa cópia do `node.exe` com o postject.
+
+## Linha de comando
+
+Tudo o que o app faz também existe por linha de comando, para quem tem Node instalado.
 Não tem dependência de execução: usa o TypeScript e o SQLite que já vêm no Node 22.18+.
 
 ## 1. Pegar a chave da Riot
@@ -23,7 +64,9 @@ Não tem dependência de execução: usa o TypeScript e o SQLite que já vêm no
    Não é pública, não tem monetização nem recursos durante a partida." A chave pessoal não precisa
    de verificação e não expira a cada 24h.
 
-## 2. Configurar
+## 2. Configurar (linha de comando)
+
+No app, a configuração é feita pela tela. Pela linha de comando:
 
 ```powershell
 git clone https://github.com/LuisFernandoBezerraDaSilva/lol-analytics.git
@@ -168,6 +211,6 @@ associated properties are trademarks or registered trademarks of Riot Games, Inc
 ## Desenvolvimento
 
 ```powershell
-npm test          # 41 testes com partidas sintéticas; nenhum chama a Riot
+npm test          # 48 testes com partidas sintéticas; nenhum chama a Riot
 npm run typecheck
 ```

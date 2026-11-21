@@ -8,6 +8,8 @@
     "node": ">=22.18"
   },
   "scripts": {
+    "app": "node --disable-warning=ExperimentalWarning src/app/servidor.ts",
+    "exe": "node scripts/gerar-exe.mjs",
     "sync": "node --disable-warning=ExperimentalWarning src/cli.ts sync",
     "relatorio": "node --disable-warning=ExperimentalWarning src/cli.ts relatorio",
     "exportar": "node --disable-warning=ExperimentalWarning src/cli.ts exportar",
@@ -19,6 +21,11 @@
   },
   "devDependencies": {
     "@types/node": "^22.18.0",
+    "esbuild": "0.25.10",
+    "postject": "1.0.0-alpha.6",
     "typescript": "^5.9.0"
+  },
+  "dependencies": {
+    "chart.js": "4.4.9"
   }
 }

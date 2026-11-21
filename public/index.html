@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>lol analytics</title>
+  <link rel="icon" href="icone.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="estilo.css">
+  <script src="vendor/chart.umd.js"></script>
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <header class="topo">
+    <div class="marca">
+      <span class="logo" aria-hidden="true"></span>
+      <div>
+        <h1>lol analytics</h1>
+        <p id="status" class="status">Carregando…</p>
+      </div>
+    </div>
+    <div class="acoes">
+      <button id="btnSync" class="primario">Sincronizar partidas</button>
+      <button id="btnConfig" class="secundario">Configurações</button>
+    </div>
+  </header>
+
+  <section class="filtros" aria-label="Filtros">
+    <label>Fila
+      <select id="fFila"><option value="">Todas</option></select>
+    </label>
+    <label>Período
+      <select id="fDias">
+        <option value="">Tudo</option>
+        <option value="7">Últimos 7 dias</option>
+        <option value="30">Últimos 30 dias</option>
+        <option value="90">Últimos 90 dias</option>
+        <option value="365">Último ano</option>
+      </select>
+    </label>
+    <label>Posição
+      <select id="fPosicao">
+        <option value="">Todas</option>
+        <option value="top">Top</option>
+        <option value="jungle">Selva</option>
+        <option value="mid">Mid</option>
+        <option value="adc">Atirador</option>
+        <option value="sup">Suporte</option>
+      </select>
+    </label>
+    <label>Campeão
+      <select id="fCampeao"><option value="">Todos</option></select>
+    </label>
+    <label class="check"><input id="fRemakes" type="checkbox"> Incluir remakes</label>
+  </section>
+
+  <nav class="abas" aria-label="Relatórios">
+    <button data-aba="visao" class="ativa">Visão geral</button>
+    <button data-aba="ouro">Viradas de ouro</button>
+    <button data-aba="causas">Causas</button>
+    <button data-aba="grupos">Campeões e grupos</button>
+    <button data-aba="curva">Curva de ouro</button>
+    <button data-aba="abates">Abates por tempo</button>
+    <button data-aba="partidas">Partidas</button>
+    <button data-aba="elo">Elo</button>
+    <button data-aba="exportar">Exportar</button>
+  </nav>
+
+  <main id="conteudo" aria-live="polite"></main>
+
+  <footer class="rodape">
+    lol analytics isn't endorsed by Riot Games and doesn't reflect the views or opinions of Riot Games or anyone
+    officially involved in producing or managing Riot Games properties. Riot Games, and all associated properties are
+    trademarks or registered trademarks of Riot Games, Inc.
+  </footer>
+
+  <dialog id="dlgSync">
+    <form method="dialog" class="dialogo">
+      <h2>Sincronizar partidas</h2>
+      <p class="ajuda">Baixa as partidas novas pela API da Riot. Cada partida custa 2 requisições; a Riot libera umas 50 partidas a cada 2 minutos.</p>
+      <div class="linha">
+        <label>Máximo de partidas <input id="sMax" type="number" min="1" value="200"></label>
+        <label class="check"><input id="sTudo" type="checkbox"> Histórico inteiro</label>
+      </div>
+      <div class="linha">
+        <label>Só da fila <select id="sFila"><option value="">Todas</option></select></label>
+        <label>A partir de <input id="sDesde" type="date"></label>
+      </div>
+      <pre id="sLog" class="log" aria-live="polite"></pre>
+      <div class="botoes">
+        <button id="sIniciar" class="primario" type="button">Iniciar</button>
+        <button class="secundario" value="fechar">Fechar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dlgConfig">
+    <form method="dialog" class="dialogo">
+      <h2>Configurações</h2>
+      <p class="ajuda">
+        Gere a chave em <strong>developer.riotgames.com</strong> (login com a conta Riot). A chave de desenvolvimento
+        expira a cada 24h; a <strong>Personal API Key</strong> não. A chave fica só no arquivo <code>.env</code>
+        deste computador e nunca é mostrada de volta.
+      </p>
+      <label>Riot ID (Nome#TAG; várias contas separadas por vírgula)
+        <input id="cRiotId" type="text" autocomplete="off" placeholder="SeuNome#BR1">
+      </label>
+      <label>Servidor <select id="cServidor"></select></label>
+      <label>Chave da API <span id="cChaveAtual" class="ajuda"></span>
+        <input id="cChave" type="password" autocomplete="off" placeholder="RGAPI-… (deixe vazio para manter a atual)">
+      </label>
+      <p id="cErro" class="erro" role="alert"></p>
+      <div class="botoes">
+        <button id="cSalvar" class="primario" type="button">Salvar</button>
+        <button class="secundario" value="fechar">Fechar</button>
+      </div>
+    </form>
+  </dialog>
+</body>
+</html>

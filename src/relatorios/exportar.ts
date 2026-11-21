@@ -25,8 +25,10 @@ export function paraCsv(linhas: Linha[], fmt: FormatoCsv): string {
   return '﻿' + linhasCsv.join('\r\n') + '\r\n';
 }
 
-export function exportar(db: DatabaseSync, f: Filtro, pasta: string, fmt: FormatoCsv): Record<string, number> {
-  mkdirSync(pasta, { recursive: true });
+export const ARQUIVOS_EXPORTACAO = ['partidas.csv', 'curva_ouro.csv', 'abates.csv'] as const;
+
+/** Os três conjuntos exportados: suas partidas, a curva de ouro por minuto e seus abates/mortes. */
+export function dadosExportacao(db: DatabaseSync, f: Filtro): Record<(typeof ARQUIVOS_EXPORTACAO)[number], Linha[]> {
   const w = where(f, 'v');
   const e = w.sql ? `${w.sql} AND` : 'WHERE';
 
@@ -60,11 +62,12 @@ export function exportar(db: DatabaseSync, f: Filtro, pasta: string, fmt: Format
     )
     .all(...w.params) as Linha[];
 
-  const arquivos: Record<string, Linha[]> = {
-    'partidas.csv': partidas,
-    'curva_ouro.csv': curva,
-    'abates.csv': abates,
-  };
+  return { 'partidas.csv': partidas, 'curva_ouro.csv': curva, 'abates.csv': abates };
+}
+
+export function exportar(db: DatabaseSync, f: Filtro, pasta: string, fmt: FormatoCsv): Record<string, number> {
+  mkdirSync(pasta, { recursive: true });
+  const arquivos = dadosExportacao(db, f);
   const contagem: Record<string, number> = {};
   for (const [nome, linhas] of Object.entries(arquivos)) {
     writeFileSync(join(pasta, nome), paraCsv(linhas, fmt), 'utf8');
