@@ -105,9 +105,21 @@ CREATE TABLE IF NOT EXISTS elo (
   registrado_em TEXT NOT NULL
 );
 
--- Suas partidas, já com as métricas por minuto e a comparação com o oponente de rota.
+-- Outros jogadores consultados pelo Riot ID. registrado = 1: guardado e atualizado a cada sync;
+-- registrado = 0: consulta eventual, descartada na próxima consulta de outro jogador.
+CREATE TABLE IF NOT EXISTS jogadores (
+  puuid TEXT PRIMARY KEY,
+  game_name TEXT NOT NULL,
+  tag_line TEXT NOT NULL,
+  registrado INTEGER NOT NULL DEFAULT 0,
+  consultado_em TEXT NOT NULL
+);
+
+-- Partidas de qualquer jogador (uma linha por jogador por partida), com as métricas por minuto
+-- e a comparação com o oponente de rota. v_minhas_partidas é esta view só com as suas contas.
 DROP VIEW IF EXISTS v_minhas_partidas;
-CREATE VIEW v_minhas_partidas AS
+DROP VIEW IF EXISTS v_partidas_jogador;
+CREATE VIEW v_partidas_jogador AS
 SELECT
   m.match_id,
   m.inicio_ms,
@@ -117,7 +129,7 @@ SELECT
   m.duracao_s,
   round(m.duracao_s / 60.0, 2) AS duracao_min,
   m.remake,
-  c.game_name || '#' || c.tag_line AS conta,
+  p.puuid,
   p.participant_id,
   p.campeao,
   p.posicao,
@@ -144,13 +156,17 @@ SELECT
   f15.ouro_total - o15.ouro_total AS dif_ouro_15,
   f15.cs - o15.cs AS dif_cs_15
 FROM participantes p
-JOIN contas c ON c.puuid = p.puuid
 JOIN partidas m ON m.match_id = p.match_id
 LEFT JOIN participantes op ON op.match_id = p.match_id AND op.participant_id = p.oponente_id
 LEFT JOIN frames f10 ON f10.match_id = p.match_id AND f10.participant_id = p.participant_id AND f10.minuto = 10
 LEFT JOIN frames o10 ON o10.match_id = p.match_id AND o10.participant_id = p.oponente_id AND o10.minuto = 10
 LEFT JOIN frames f15 ON f15.match_id = p.match_id AND f15.participant_id = p.participant_id AND f15.minuto = 15
 LEFT JOIN frames o15 ON o15.match_id = p.match_id AND o15.participant_id = p.oponente_id AND o15.minuto = 15;
+
+CREATE VIEW v_minhas_partidas AS
+SELECT v.*, c.game_name || '#' || c.tag_line AS conta
+FROM v_partidas_jogador v
+JOIN contas c ON c.puuid = v.puuid;
 `;
 
 export function abrirBanco(caminho: string): DatabaseSync {

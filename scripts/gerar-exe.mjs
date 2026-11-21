@@ -19,7 +19,15 @@ const ARQUIVOS_DA_PAGINA = ['index.html', 'app.js', 'estilo.css', 'icone.svg'];
 
 // Nunca apaga a pasta dist inteira: o .env e a pasta data de quem usa o .exe podem estar nela.
 mkdirSync(dist, { recursive: true });
-rmSync(exe, { force: true });
+try {
+  rmSync(exe, { force: true });
+} catch (e) {
+  if (e.code === 'EBUSY' || e.code === 'EPERM') {
+    console.error(`O ${nomeExe} está aberto. Feche a janela do app e rode "npm run exe" de novo.`);
+    process.exit(1);
+  }
+  throw e;
+}
 
 // 1. Um arquivo JavaScript só (CommonJS), que é o que o SEA aceita.
 //    O aviso "SQLite is experimental" é escondido para não poluir a janela do app.

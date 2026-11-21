@@ -40,7 +40,7 @@ function montar() {
   const chamar = async (metodo: string, url: string, corpo?: unknown) => {
     const u = new URL(url, 'http://x');
     const r = await api.tratar({ metodo, caminho: u.pathname, query: u.searchParams, corpo } as Requisicao);
-    return { status: r.status, corpo: r.tipo.startsWith('application/json') ? JSON.parse(r.corpo) : r.corpo, r };
+    return { status: r.status, corpo: r.tipo.startsWith('application/json') ? JSON.parse(String(r.corpo)) : r.corpo, r };
   };
   return { db, api, chamar, arquivoEnv };
 }

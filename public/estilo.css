@@ -127,6 +127,29 @@ dialog::backdrop { background: rgba(5, 10, 20, 0.55); }
 .botoes { display: flex; gap: 8px; justify-content: flex-end; }
 .log { background: var(--painel-2); border-radius: 8px; padding: 10px; min-height: 80px; max-height: 240px; overflow: auto; font-size: 12px; white-space: pre-wrap; margin: 0; }
 
+dialog.largo { width: min(1180px, calc(100vw - 32px)); max-height: calc(100vh - 32px); }
+.cab-dialogo { display: flex; justify-content: space-between; align-items: start; gap: 12px; }
+
+.placar-time { margin-top: 14px; }
+.placar-time .titulo { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; margin-bottom: 4px; }
+.placar-time .titulo strong { font-size: 15px; }
+.placar-time.azul .titulo strong { color: var(--azul); }
+.placar-time.vermelho .titulo strong { color: var(--neg); }
+.placar td { vertical-align: middle; padding: 5px 8px; }
+.placar tr.eu td { background: color-mix(in srgb, var(--destaque) 14%, transparent); }
+.placar tr.foco td { background: color-mix(in srgb, var(--azul) 16%, transparent); }
+.campeao { display: flex; align-items: center; gap: 8px; }
+.icone { width: 30px; height: 30px; border-radius: 6px; background: var(--painel-2); flex: none; object-fit: cover; }
+.nivel { font-size: 11px; color: var(--texto-2); }
+.itens { display: flex; gap: 3px; }
+.item { width: 24px; height: 24px; border-radius: 4px; background: var(--painel-2); border: 1px solid var(--borda); flex: none; }
+.item.amuleto { border-radius: 50%; margin-left: 4px; }
+.barra { height: 6px; border-radius: 3px; background: var(--painel-2); margin-top: 3px; min-width: 70px; }
+.barra > span { display: block; height: 100%; border-radius: 3px; background: var(--destaque); }
+.ficha { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 6px 0 12px; }
+.linha-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+.linha-form input[type="text"] { min-width: 240px; }
+
 .rodape { color: var(--texto-2); font-size: 11px; padding: 0 24px 24px; max-width: 900px; }
 
 @media (max-width: 640px) {

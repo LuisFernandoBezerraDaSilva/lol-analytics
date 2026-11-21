@@ -61,6 +61,7 @@
     <button data-aba="curva">Curva de ouro</button>
     <button data-aba="abates">Abates por tempo</button>
     <button data-aba="partidas">Partidas</button>
+    <button data-aba="jogadores">Jogadores</button>
     <button data-aba="elo">Elo</button>
     <button data-aba="exportar">Exportar</button>
   </nav>
@@ -90,6 +91,19 @@
         <button id="sIniciar" class="primario" type="button">Iniciar</button>
         <button class="secundario" value="fechar">Fechar</button>
       </div>
+    </form>
+  </dialog>
+
+  <dialog id="dlgPartida" class="largo">
+    <form method="dialog" class="dialogo">
+      <div class="cab-dialogo">
+        <div>
+          <h2 id="pTitulo">Partida</h2>
+          <p id="pSub" class="ajuda"></p>
+        </div>
+        <button class="secundario" value="fechar">Fechar</button>
+      </div>
+      <div id="pConteudo"></div>
     </form>
   </dialog>
 

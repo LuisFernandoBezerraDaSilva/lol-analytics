@@ -106,6 +106,7 @@ const servidor = createServer(async (req, res) => {
     }
     const r = await api.tratar({ metodo: req.method ?? 'GET', caminho: url.pathname, query: url.searchParams, corpo });
     const extras: Record<string, string> = r.arquivo ? { 'Content-Disposition': `attachment; filename="${r.arquivo}"` } : {};
+    if (r.cache) extras['Cache-Control'] = 'max-age=604800';
     responder(res, r.status, r.tipo, r.corpo, extras);
   } catch (e) {
     responder(res, 400, 'application/json', JSON.stringify({ erro: e instanceof Error ? e.message : String(e) }));

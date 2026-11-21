@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import type { Linha } from './consultas.ts';
-import { where, type Filtro } from './filtro.ts';
+import { fonte, where, type Filtro } from './filtro.ts';
 
 export interface FormatoCsv {
   separador: string;
@@ -32,14 +32,14 @@ export function dadosExportacao(db: DatabaseSync, f: Filtro): Record<(typeof ARQ
   const w = where(f, 'v');
   const e = w.sql ? `${w.sql} AND` : 'WHERE';
 
-  const partidas = db.prepare(`SELECT * FROM v_minhas_partidas v ${w.sql} ORDER BY inicio_ms`).all(...w.params) as Linha[];
+  const partidas = db.prepare(`SELECT * FROM ${fonte(f)} v ${w.sql} ORDER BY inicio_ms`).all(...w.params) as Linha[];
 
   const curva = db
     .prepare(
       `SELECT v.match_id, v.data, v.campeao, v.oponente, v.vitoria, fm.minuto,
          fm.ouro_total AS meu_ouro, fo.ouro_total AS ouro_oponente, fm.ouro_total - fo.ouro_total AS diferenca,
          fm.cs AS meu_cs, fo.cs AS cs_oponente, fm.xp AS meu_xp, fo.xp AS xp_oponente, fm.nivel AS meu_nivel
-       FROM v_minhas_partidas v
+       FROM ${fonte(f)} v
        JOIN frames fm ON fm.match_id = v.match_id AND fm.participant_id = v.participant_id
        LEFT JOIN frames fo ON fo.match_id = v.match_id AND fo.participant_id = v.oponente_id AND fo.minuto = fm.minuto
        ${w.sql} ORDER BY v.inicio_ms, fm.minuto`,
@@ -54,7 +54,7 @@ export function dadosExportacao(db: DatabaseSync, f: Filtro): Record<(typeof ARQ
               WHEN ev.vitima_id = v.participant_id THEN 'morte'
               ELSE 'assistencia' END AS tipo,
          ev.x, ev.y
-       FROM v_minhas_partidas v
+       FROM ${fonte(f)} v
        JOIN eventos ev ON ev.match_id = v.match_id AND ev.tipo = 'CHAMPION_KILL'
        ${e} (ev.participant_id = v.participant_id OR ev.vitima_id = v.participant_id
              OR instr(',' || coalesce(ev.assistencias, '') || ',', ',' || v.participant_id || ',') > 0)

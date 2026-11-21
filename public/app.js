@@ -5,6 +5,8 @@ const fmt = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 });
 const conteudo = $('#conteudo');
 let abaAtual = 'visao';
 let partidaOuro = null;
+let jogadorAtual = null;
+try { jogadorAtual = sessionStorage.getItem('jogador'); } catch { /* sem storage */ }
 
 // ------------------------------------------------------------ utilidades
 
@@ -405,16 +407,163 @@ const ABAS = {
 
   async partidas() {
     const r = await api('/api/recentes', filtros({ n: 100 }));
-    return el('section', { class: 'painel' }, el('h2', {}, 'Partidas'), el('p', { class: 'ajuda' }, 'Clique numa partida para abrir as viradas de ouro.'),
+    return el('section', { class: 'painel' }, el('h2', {}, 'Partidas'), el('p', { class: 'ajuda' }, 'Clique numa partida para ver o placar completo.'),
       tabela(colunasDe(r).filter((c) => c.chave !== 'match_id'), r.linhas, {
         cores: ['dif_ouro_10'],
-        aoClicar: (l) => {
-          partidaOuro = l.match_id;
-          mostrar('ouro');
-        },
+        aoClicar: (l) => abrirPlacar(l.match_id),
       }));
   },
 
+  async jogadores() {
+    const [lista, estado] = await Promise.all([api('/api/jogadores'), api('/api/sync')]);
+    const riotId = el('input', { type: 'text', placeholder: 'Nome#TAG', autocomplete: 'off', value: riotIdPendente || '' });
+    riotIdPendente = null;
+    const qtd = el('select', {}, ...[10, 20, 40].map((n) => el('option', { value: n, selected: n === 20 }, `${n} partidas`)));
+    const erro = el('p', { class: 'erro' });
+    const log = el('pre', { id: 'jLog', class: 'log', hidden: !(estado.rodando && estado.tipo === 'consulta') }, estado.log.join('\n'));
+    const botao = el('button', { class: 'primario', type: 'button' }, 'Consultar');
+    const consultar = async (corpo) => {
+      erro.textContent = '';
+      try {
+        await post('/api/jogadores/consultar', corpo);
+        log.hidden = false;
+        acompanharTarefa();
+      } catch (e) {
+        erro.textContent = e.message;
+      }
+    };
+    botao.addEventListener('click', () => consultar({ riotId: riotId.value, n: Number(qtd.value) }));
+    riotId.addEventListener('keydown', (e) => e.key === 'Enter' && (e.preventDefault(), botao.click()));
+
+    const busca = el('section', { class: 'painel' },
+      el('h2', {}, 'Consultar jogador'),
+      el('p', { class: 'ajuda' }, 'Baixa as partidas recentes de qualquer jogador pelo Riot ID. Cada partida custa 2 requisições à Riot. A consulta é eventual: ao consultar outra pessoa, a anterior é descartada, a menos que você a registre em memória.'),
+      el('div', { class: 'linha-form' }, el('label', {}, 'Riot ID', riotId), el('label', {}, 'Quantas', qtd), botao),
+      erro, log);
+
+    const salvos = lista.filter((j) => j.registrado);
+    const memoria = el('section', { class: 'painel' }, el('h2', {}, 'Jogadores em memória'),
+      salvos.length
+        ? tabela([{ chave: 'riotId', rotulo: 'Jogador' }, { chave: 'partidas', rotulo: 'Partidas' }, { chave: 'consultadoEm', rotulo: 'Atualizado em' }], salvos, {
+            selecionada: (j) => j.puuid === jogadorAtual,
+            aoClicar: (j) => abrirJogador(j.puuid),
+          })
+        : vazio('Nenhum jogador registrado. Consulte alguém e clique em "Registrar em memória".'));
+
+    const partes = [el('div', { class: 'grade' }, busca, memoria)];
+    if (jogadorAtual && lista.some((j) => j.puuid === jogadorAtual)) partes.push(await painelJogador(jogadorAtual, consultar));
+    return el('div', {}, ...partes);
+  },
+};
+
+let riotIdPendente = null;
+
+function abrirJogador(puuid) {
+  jogadorAtual = puuid;
+  try { sessionStorage.setItem('jogador', puuid); } catch { /* sem storage */ }
+  mostrar('jogadores');
+}
+
+/** Ficha do jogador consultado: elo, números gerais, campeões e partidas recentes. */
+async function painelJogador(puuid, consultar) {
+  const f = (extra = {}) => filtros({ puuid, ...extra });
+  const [j, r, camp, rec] = await Promise.all([
+    api('/api/jogador', new URLSearchParams({ puuid })),
+    api('/api/resumo', f()),
+    api('/api/grupo/campeao', f()),
+    api('/api/recentes', f({ n: 40 })),
+  ]);
+  const botaoMemoria = el('button', {
+    class: j.registrado ? 'secundario' : 'primario',
+    type: 'button',
+    onclick: async () => {
+      botaoMemoria.disabled = true;
+      try {
+        await post('/api/jogadores/registrar', { puuid, registrar: !j.registrado });
+        mostrar('jogadores');
+      } catch (e) {
+        botaoMemoria.disabled = false;
+        alert(e.message);
+      }
+    },
+  }, j.registrado ? 'Remover da memória' : 'Registrar em memória');
+  const atualizar = el('button', { class: 'secundario', type: 'button', onclick: () => consultar({ puuid, n: 20 }) }, 'Atualizar partidas');
+  const kpi = (rotulo, valor) => el('div', { class: 'kpi' }, el('div', { class: 'rotulo' }, rotulo), el('div', { class: 'valor' }, valor));
+  return el('section', { class: 'painel' },
+    el('div', { class: 'cab-dialogo' },
+      el('div', {}, el('h2', {}, j.riotId), el('p', { class: 'ajuda' }, j.registrado ? 'Registrado em memória: atualizado a cada sincronização.' : 'Consulta eventual: será descartada na próxima consulta.')),
+      el('div', { class: 'acoes' }, atualizar, botaoMemoria)),
+    el('div', { class: 'ficha' }, j.elo.length ? j.elo.map((e) => el('span', { class: 'etiqueta' }, `${e.fila === 'RANKED_SOLO_5x5' ? 'Solo/Duo' : e.fila === 'RANKED_FLEX_SR' ? 'Flex' : e.fila}: ${e.elo} ${e.pdl} PDL · ${num(e.vitoria_pct)}% em ${e.vitorias + e.derrotas} jogos`)) : el('span', { class: 'etiqueta' }, 'Sem ranqueada')),
+    r.jogos
+      ? el('div', { class: 'kpis' }, kpi('Jogos', num(r.jogos)), kpi('Vitórias', `${num(r.vitoria_pct)}%`), kpi('KDA', num(r.kda)), kpi('Ouro/min', num(r.ouro_min)), kpi('CS/min', num(r.cs_min)), kpi('Dano/min', num(r.dano_min)))
+      : vazio('Nenhuma partida com esses filtros.'),
+    el('div', { class: 'grade' },
+      el('div', {}, el('h3', {}, 'Campeões'), tabela(colunasDe(camp, ['grupo', 'jogos', 'vitoria_pct', 'kda', 'ouro_min', 'cs_min']).map((c) => (c.chave === 'grupo' ? { ...c, rotulo: 'Campeão' } : c)), camp.linhas)),
+      el('div', {}, el('h3', {}, 'Partidas recentes'), tabela(colunasDe(rec, ['data', 'campeao', 'oponente', 'resultado', 'kda_linha', 'ouro_min']), rec.linhas, { aoClicar: (l) => abrirPlacar(l.match_id, puuid) }))),
+  );
+}
+
+// ------------------------------------------------------------ placar
+
+let nomesItens = null;
+
+function icone(tipo, nome, classe, titulo) {
+  const img = el('img', { class: classe, src: `/api/ddragon/${tipo}/${encodeURIComponent(nome)}`, alt: titulo || '', title: titulo || '', loading: 'lazy' });
+  img.addEventListener('error', () => img.replaceWith(el('span', { class: classe, title: titulo || '' })));
+  return img;
+}
+
+async function abrirPlacar(matchId, puuid) {
+  const dlg = $('#dlgPartida');
+  const caixa = $('#pConteudo');
+  $('#pTitulo').textContent = 'Carregando…';
+  $('#pSub').textContent = '';
+  caixa.replaceChildren();
+  if (!dlg.open) dlg.showModal();
+  try {
+    const params = new URLSearchParams({ match: matchId });
+    if (puuid) params.set('puuid', puuid);
+    if (!nomesItens) nomesItens = await api('/api/ddragon/itens').catch(() => ({}));
+    const p = await api('/api/partida', params);
+    $('#pTitulo').textContent = `${p.fila} · ${p.duracao}${p.remake ? ' · remake' : ''}`;
+    $('#pSub').textContent = `${p.data} · versão ${p.versao} · ${p.matchId}`;
+    const maxDano = Math.max(...p.times.flatMap((t) => t.jogadores.map((j) => j.dano)), 1);
+    const linha = (j) =>
+      el('tr', { class: j.eu ? 'eu' : j.foco ? 'foco' : undefined },
+        el('td', {}, el('div', { class: 'campeao' }, icone('campeao', j.campeao, 'icone', j.campeao), el('div', {}, el('div', {}, j.campeao), el('div', { class: 'nivel' }, `Nível ${j.nivel}`)))),
+        el('td', {}, j.eu ? el('strong', {}, j.riotId) : el('button', { class: 'link', type: 'button', title: 'Consultar este jogador', onclick: () => { dlg.close(); riotIdPendente = j.riotId; mostrar('jogadores'); } }, j.riotId)),
+        el('td', { class: 'num' }, `${j.kills}/${j.deaths}/${j.assists}`, el('div', { class: 'nivel' }, `KDA ${num(j.kda)}`)),
+        el('td', { class: 'num' }, num(j.cs), el('div', { class: 'nivel' }, `${num(j.csMin)}/min`)),
+        el('td', { class: 'num' }, num(j.ouro)),
+        el('td', { class: 'num' }, num(j.dano), el('div', { class: 'barra' }, el('span', { style: `width:${Math.round((j.dano / maxDano) * 100)}%` }))),
+        el('td', { class: 'num' }, num(j.visao)),
+        el('td', {}, el('div', { class: 'itens' }, j.itens.map((id, i) => {
+          const classe = i === 6 ? 'item amuleto' : 'item';
+          return id ? icone('item', String(id), classe, nomesItens[id] || `Item ${id}`) : el('span', { class: classe });
+        }))),
+      );
+    const cab = el('tr', {}, ['Campeão', 'Jogador', 'K/D/A', 'CS', 'Ouro', 'Dano', 'Visão', 'Itens'].map((t, i) => el('th', { class: i >= 2 && i <= 6 ? 'num' : undefined }, t)));
+    const times = p.times.map((t) =>
+      el('section', { class: `placar-time ${t.timeId === 100 ? 'azul' : 'vermelho'}` },
+        el('div', { class: 'titulo' }, el('strong', {}, `${t.lado} · ${t.vitoria ? 'Vitória' : 'Derrota'}`), el('span', { class: 'ajuda' }, `${t.kills} abates · ${num(t.ouro)} de ouro`)),
+        el('div', { class: 'tabela-caixa' }, el('table', { class: 'placar' }, el('thead', {}, cab.cloneNode(true)), el('tbody', {}, t.jogadores.map(linha))))),
+    );
+    const focoOuEu = p.times.flatMap((t) => t.jogadores).find((j) => j.foco || j.eu);
+    const extras = [];
+    if (p.temTimeline && focoOuEu && focoOuEu.posicao) {
+      const caixaOuro = el('div', {});
+      const botao = el('button', { class: 'secundario', type: 'button', onclick: () => { botao.remove(); carregarDetalhe(caixaOuro, p.matchId, focoOuEu.eu ? undefined : focoOuEu.puuid, false); } }, `Ver viradas de ouro de ${focoOuEu.eu ? 'você' : focoOuEu.riotId}`);
+      extras.push(el('div', { style: 'margin-top:16px' }, botao, caixaOuro));
+    }
+    caixa.replaceChildren(...times, ...extras);
+  } catch (e) {
+    $('#pTitulo').textContent = 'Partida';
+    caixa.replaceChildren(el('p', { class: 'erro' }, e.message));
+  }
+}
+
+// Abas de elo e exportação (definidas aqui, depois das funções do placar e dos jogadores).
+Object.assign(ABAS, {
   async elo() {
     const caixa = el('div', {});
     const desenhar = (r) => caixa.replaceChildren(r.linhas.length ? tabela(r.colunas, r.linhas) : vazio('Sem elo registrado. Sincronize ou clique em Atualizar.'));
@@ -444,12 +593,14 @@ const ABAS = {
     desenhar();
     return el('section', { class: 'painel' }, el('h2', {}, 'Exportar para CSV'), el('p', { class: 'ajuda' }, 'Usa os filtros lá de cima.'), el('label', {}, 'Formato', formato), links);
   },
-};
+});
 
-async function carregarDetalhe(caixa) {
+async function carregarDetalhe(caixa, matchId = partidaOuro, puuid = undefined, comBotaoPlacar = true) {
   caixa.replaceChildren('Carregando…');
   try {
-    const d = await api('/api/ouro', new URLSearchParams({ match: partidaOuro }));
+    const params = new URLSearchParams({ match: matchId });
+    if (puuid) params.set('puuid', puuid);
+    const d = await api('/api/ouro', params);
     const p = d.partida;
     const eps = d.episodios.map((e) =>
       el(
@@ -461,7 +612,9 @@ async function carregarDetalhe(caixa) {
       ),
     );
     caixa.replaceChildren(
-      el('h2', {}, `${p.campeao} x ${p.oponente} · ${p.vitoria ? 'Vitória' : 'Derrota'}`),
+      el('div', { class: 'cab-dialogo' },
+        el('h2', {}, `${p.campeao} x ${p.oponente} · ${p.vitoria ? 'Vitória' : 'Derrota'}`),
+        comBotaoPlacar ? el('button', { class: 'secundario', type: 'button', onclick: () => abrirPlacar(p.matchId, puuid) }, 'Ver placar') : null),
       el('p', { class: 'ajuda' }, `${p.data} · ${p.matchId}`),
       el('h3', {}, `Diferença de ouro por minuto (você − ${p.oponente})`),
       graficoDiferenca(d.diferenca, d.episodios),
@@ -512,19 +665,34 @@ async function carregarOpcoes() {
 }
 
 let vigia = null;
-function acompanharSync() {
+/** Acompanha a tarefa em segundo plano (sincronização ou consulta de jogador) até terminar. */
+function acompanharTarefa() {
   clearInterval(vigia);
+  let terminou = false;
   const passo = async () => {
+    if (terminou) return;
     const s = await api('/api/sync');
-    $('#sLog').textContent = s.log.join('\n') || 'Começando…';
-    $('#sLog').scrollTop = $('#sLog').scrollHeight;
+    const texto = s.log.join('\n') || 'Começando…';
+    const logs = s.tipo === 'consulta' ? [$('#jLog')] : [$('#sLog')];
+    for (const l of logs) {
+      if (!l) continue;
+      l.hidden = false;
+      l.textContent = texto;
+      l.scrollTop = l.scrollHeight;
+    }
     $('#sIniciar').disabled = s.rodando;
-    $('#btnSync').textContent = s.rodando ? 'Sincronizando…' : 'Sincronizar partidas';
-    if (!s.rodando) {
+    $('#btnSync').textContent = s.rodando && s.tipo === 'sync' ? 'Sincronizando…' : 'Sincronizar partidas';
+    if (!s.rodando && !terminou) {
+      terminou = true;
       clearInterval(vigia);
+      if (s.tipo === 'consulta' && s.resultado && !s.erro) {
+        jogadorAtual = s.resultado.puuid;
+        try { sessionStorage.setItem('jogador', jogadorAtual); } catch { /* sem storage */ }
+      }
       await atualizarEstado();
       await carregarOpcoes();
-      mostrar(abaAtual);
+      if (!(s.tipo === 'consulta' && s.erro)) await mostrar(abaAtual);
+      if (s.tipo === 'consulta' && s.erro && $('#jLog')) $('#jLog').textContent = texto;
     }
   };
   vigia = setInterval(() => passo().catch(() => {}), 1000);
@@ -560,7 +728,7 @@ $('#btnSync').addEventListener('click', async () => {
   const e = await api('/api/estado');
   if (!e.config.chaveConfigurada || !e.config.riotId) return abrirConfig();
   $('#dlgSync').showModal();
-  if (e.sync.rodando) acompanharSync();
+  if (e.sync.rodando) acompanharTarefa();
   else $('#sLog').textContent = e.sync.log.join('\n');
 });
 
@@ -569,7 +737,7 @@ $('#sTudo').addEventListener('change', () => ($('#sMax').disabled = $('#sTudo').
 $('#sIniciar').addEventListener('click', async () => {
   try {
     await post('/api/sync', { max: Number($('#sMax').value), tudo: $('#sTudo').checked, fila: $('#sFila').value, desde: $('#sDesde').value });
-    acompanharSync();
+    acompanharTarefa();
   } catch (e) {
     $('#sLog').textContent = `Erro: ${e.message}`;
   }
@@ -583,7 +751,7 @@ for (const id of ['#fFila', '#fDias', '#fPosicao', '#fCampeao', '#fRemakes']) $(
     const e = await atualizarEstado();
     await carregarOpcoes();
     await mostrar('visao');
-    if (e.sync.rodando) acompanharSync();
+    if (e.sync.rodando) acompanharTarefa();
     if (!e.config.chaveConfigurada) abrirConfig();
   } catch (e) {
     conteudo.replaceChildren(el('p', { class: 'erro' }, `Não consegui falar com o app: ${e.message}`));

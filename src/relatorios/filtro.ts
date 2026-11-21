@@ -8,6 +8,8 @@ export interface Filtro {
   posicao?: string;
   /** Riot ID (Nome#TAG) quando há mais de uma conta. */
   conta?: string;
+  /** Outro jogador (consultado pelo Riot ID). Sem isso, só as suas contas. */
+  puuid?: string;
   incluirRemakes?: boolean;
   /** Referência de "agora" (testes). */
   agoraMs?: number;
@@ -27,7 +29,12 @@ export const POSICOES: Record<string, string> = {
   support: 'UTILITY',
 };
 
-/** Monta o WHERE sobre a view v_minhas_partidas (alias opcional). */
+/** De onde vêm as partidas: as suas contas ou, com puuid, as de qualquer jogador. */
+export function fonte(f: Filtro): string {
+  return f.puuid ? 'v_partidas_jogador' : 'v_minhas_partidas';
+}
+
+/** Monta o WHERE sobre a view de partidas (alias opcional). */
 export function where(f: Filtro, alias = ''): { sql: string; params: SQLInputValue[] } {
   const a = alias ? `${alias}.` : '';
   const c: string[] = [];
@@ -49,7 +56,11 @@ export function where(f: Filtro, alias = ''): { sql: string; params: SQLInputVal
     c.push(`${a}posicao = ?`);
     params.push(POSICOES[f.posicao.toLowerCase()] ?? f.posicao.toUpperCase());
   }
-  if (f.conta) {
+  if (f.puuid) {
+    c.push(`${a}puuid = ?`);
+    params.push(f.puuid);
+  }
+  if (f.conta && !f.puuid) {
     c.push(`lower(${a}conta) = lower(?)`);
     params.push(f.conta);
   }

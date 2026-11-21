@@ -1,4 +1,8 @@
+import { resolve } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
+import { DataDragon } from '../ddragon.ts';
+import { atualizarJogador, atualizarRegistrados, consultarJogador, listarJogadores, registrarJogador } from '../jogadores.ts';
+import { placar } from '../relatorios/placar.ts';
 import { analisarPartida, NOME_CAUSA, PADRAO_ANALISE, partidasAnalisaveis, resumirCausas, type OpcoesAnalise } from '../analise/ouro.ts';
 import { carregarConfig } from '../config.ts';
 import { resumoConfig, salvarConfig, type NovaConfig } from '../configurar.ts';
@@ -20,16 +24,22 @@ export interface Requisicao {
 export interface Resposta {
   status: number;
   tipo: string;
-  corpo: string;
+  corpo: string | Buffer;
   arquivo?: string;
+  /** Pode ficar no cache do navegador (ícones). */
+  cache?: boolean;
 }
 
+/** Tarefa em segundo plano: sincronização ou consulta de jogador (uma de cada vez). */
 export interface EstadoSync {
   rodando: boolean;
+  tipo: 'sync' | 'consulta' | null;
   log: string[];
   inicio: string | null;
   fim: string | null;
   erro: string | null;
+  /** Resultado da consulta de jogador (para a tela abrir o jogador). */
+  resultado: { puuid: string; riotId: string } | null;
 }
 
 type Riot = Pick<ClienteRiot, 'contaPorRiotId' | 'idsDePartidas' | 'partida' | 'timeline' | 'ranqueadas'>;
@@ -39,6 +49,8 @@ export interface Dependencias {
   criarRiot?: () => { riot: Riot; riotIds: Array<{ gameName: string; tagLine: string }> };
   /** Onde fica o .env (testes usam um arquivo temporário). */
   arquivoEnv?: string;
+  /** Ícones e nomes de itens (testes usam um falso). */
+  ddragon?: Pick<DataDragon, 'iconeCampeao' | 'iconeItem' | 'itens'>;
 }
 
 class ErroHttp extends Error {
@@ -67,6 +79,7 @@ function filtroDaQuery(q: URLSearchParams): Filtro {
       campeao: q.get('campeao') || undefined,
       posicao: q.get('posicao') || undefined,
       conta: q.get('conta') || undefined,
+      puuid: q.get('puuid') || undefined,
       incluirRemakes: q.get('remakes') === '1',
     };
   } catch (e) {
@@ -84,12 +97,41 @@ function tabela(linhas: Linha[]) {
 }
 
 export function criarApi(db: DatabaseSync, deps: Dependencias = {}) {
-  const sync: EstadoSync = { rodando: false, log: [], inicio: null, fim: null, erro: null };
+  const sync: EstadoSync = { rodando: false, tipo: null, log: [], inicio: null, fim: null, erro: null, resultado: null };
+  const ddragon = deps.ddragon ?? new DataDragon(resolve(process.cwd(), 'data', 'ddragon'));
+
+  /** Roda uma tarefa em segundo plano, com o andamento em `sync.log`. */
+  function rodarTarefa(tipo: 'sync' | 'consulta', fn: (log: (m: string) => void) => Promise<void>): void {
+    if (sync.rodando) throw new ErroHttp(409, sync.tipo === 'sync' ? 'Já existe uma sincronização em andamento.' : 'Já existe uma consulta em andamento.');
+    Object.assign(sync, { rodando: true, tipo, log: [], inicio: new Date().toISOString(), fim: null, erro: null, resultado: null });
+    const log = (m: string) => {
+      sync.log.push(m);
+      if (sync.log.length > 500) sync.log.splice(0, sync.log.length - 500);
+    };
+    void (async () => {
+      try {
+        await fn(log);
+      } catch (e) {
+        sync.erro = e instanceof Error ? e.message : String(e);
+        log(`Erro: ${sync.erro}`);
+      } finally {
+        sync.rodando = false;
+        sync.fim = new Date().toISOString();
+      }
+    })();
+  }
 
   const criarRiot =
     deps.criarRiot ??
     (() => {
-      const cfg = carregarConfig();
+      let cfg;
+      try {
+        cfg = carregarConfig();
+      } catch (e) {
+        const motivo = e instanceof Error ? e.message : String(e);
+        const semChave = motivo.startsWith('RIOT_API_KEY');
+        throw new ErroHttp(400, semChave ? 'Configure a chave da Riot em "Configurações", lá em cima.' : `${motivo} Ajuste em "Configurações".`);
+      }
       return { riot: new ClienteRiot(cfg), riotIds: cfg.riotIds };
     });
 
@@ -106,7 +148,7 @@ export function criarApi(db: DatabaseSync, deps: Dependencias = {}) {
   }
 
   function iniciarSync(corpo: Record<string, unknown>): void {
-    if (sync.rodando) throw new ErroHttp(409, 'Já existe uma sincronização em andamento.');
+    if (sync.rodando) throw new ErroHttp(409, sync.tipo === 'sync' ? 'Já existe uma sincronização em andamento.' : 'Já existe uma consulta em andamento.');
     const { riot, riotIds } = criarRiot();
     const tudo = corpo.tudo === true;
     const max = tudo ? Infinity : Number(corpo.max ?? 200);
@@ -118,29 +160,56 @@ export function criarApi(db: DatabaseSync, deps: Dependencias = {}) {
       if (Number.isNaN(t)) throw new ErroHttp(400, 'desde precisa estar no formato AAAA-MM-DD.');
       desde = Math.floor(t / 1000);
     }
-    Object.assign(sync, { rodando: true, log: [], inicio: new Date().toISOString(), fim: null, erro: null });
-    const log = (m: string) => {
-      sync.log.push(m);
-      if (sync.log.length > 500) sync.log.splice(0, sync.log.length - 500);
-    };
-    void (async () => {
-      try {
-        const res = await sincronizar(db, riot as ClienteRiot, riotIds, { max, fila, desde, log });
-        for (const r of res) {
-          const extras = [r.semTimeline ? `${r.semTimeline} sem timeline` : '', r.indisponiveis ? `${r.indisponiveis} indisponíveis` : ''].filter(Boolean);
-          log(`${r.conta}: ${r.novas} partida(s) salva(s)${extras.length ? ` (${extras.join(', ')})` : ''}.`);
-          if (Number.isFinite(max) && r.novas >= max) log('Ainda há partidas antigas: sincronize de novo para continuar.');
-        }
-        const n = await registrarElo(db, riot as ClienteRiot);
-        log(`Elo registrado (${n} fila(s)). Pronto.`);
-      } catch (e) {
-        sync.erro = e instanceof Error ? e.message : String(e);
-        log(`Erro: ${sync.erro}`);
-      } finally {
-        sync.rodando = false;
-        sync.fim = new Date().toISOString();
+    rodarTarefa('sync', async (log) => {
+      const res = await sincronizar(db, riot as ClienteRiot, riotIds, { max, fila, desde, log });
+      for (const r of res) {
+        const extras = [r.semTimeline ? `${r.semTimeline} sem timeline` : '', r.indisponiveis ? `${r.indisponiveis} indisponíveis` : ''].filter(Boolean);
+        log(`${r.conta}: ${r.novas} partida(s) salva(s)${extras.length ? ` (${extras.join(', ')})` : ''}.`);
+        if (Number.isFinite(max) && r.novas >= max) log('Ainda há partidas antigas: sincronize de novo para continuar.');
       }
-    })();
+      const n = await registrarElo(db, riot as ClienteRiot);
+      log(`Elo registrado (${n} fila(s)).`);
+      if (listarJogadores(db).some((j) => j.registrado)) {
+        log('Atualizando os jogadores registrados em memória…');
+        await atualizarRegistrados(db, riot as ClienteRiot, 20, log);
+      }
+      log('Pronto.');
+    });
+  }
+
+  function iniciarConsulta(corpo: Record<string, unknown>): void {
+    const riotId = typeof corpo.riotId === 'string' ? corpo.riotId.trim() : '';
+    const puuid = typeof corpo.puuid === 'string' ? corpo.puuid : '';
+    if (!riotId && !puuid) throw new ErroHttp(400, 'Informe o Riot ID (Nome#TAG).');
+    const n = Number(corpo.n ?? 20);
+    if (!Number.isInteger(n) || n < 1 || n > 100) throw new ErroHttp(400, 'Quantidade de partidas entre 1 e 100.');
+    if (sync.rodando) throw new ErroHttp(409, sync.tipo === 'sync' ? 'Espere a sincronização terminar.' : 'Já existe uma consulta em andamento.');
+    const { riot } = criarRiot();
+    rodarTarefa('consulta', async (log) => {
+      if (puuid) {
+        await atualizarJogador(db, riot as ClienteRiot, puuid, { n, log });
+        const j = listarJogadores(db).find((x) => x.puuid === puuid)!;
+        sync.resultado = { puuid, riotId: j.riotId };
+      } else {
+        const r = await consultarJogador(db, riot as ClienteRiot, riotId, { n, log });
+        sync.resultado = { puuid: r.puuid, riotId: r.riotId };
+      }
+    });
+  }
+
+  function jogador(puuid: string) {
+    const j = listarJogadores(db).find((x) => x.puuid === puuid);
+    if (!j) throw new ErroHttp(404, 'Jogador não encontrado. Consulte o Riot ID de novo.');
+    const elo = db
+      .prepare(
+        `SELECT e.fila, e.tier || ' ' || e.divisao AS elo, e.pdl, e.vitorias, e.derrotas,
+           round(e.vitorias * 100.0 / max(e.vitorias + e.derrotas, 1), 1) AS vitoria_pct
+         FROM elo e
+         WHERE e.puuid = ? AND e.registrado_em = (SELECT max(x.registrado_em) FROM elo x WHERE x.puuid = e.puuid AND x.fila = e.fila)
+         ORDER BY e.fila`,
+      )
+      .all(puuid) as Linha[];
+    return { ...j, elo };
   }
 
   function elo(): Linha[] {
@@ -158,8 +227,13 @@ export function criarApi(db: DatabaseSync, deps: Dependencias = {}) {
   function ouro(q: URLSearchParams) {
     const id = q.get('match');
     let alvo: { match_id: string; participant_id: number } | undefined;
+    const foco = q.get('puuid');
     if (id) {
-      alvo = db.prepare('SELECT match_id, participant_id FROM v_minhas_partidas WHERE match_id = ? LIMIT 1').get(id) as typeof alvo;
+      alvo = (
+        foco
+          ? db.prepare('SELECT match_id, participant_id FROM participantes WHERE match_id = ? AND puuid = ?').get(id, foco)
+          : db.prepare('SELECT match_id, participant_id FROM v_minhas_partidas WHERE match_id = ? LIMIT 1').get(id)
+      ) as typeof alvo;
     } else {
       alvo = partidasAnalisaveis(db, filtroDaQuery(q), 1)[0];
     }
@@ -266,6 +340,38 @@ export function criarApi(db: DatabaseSync, deps: Dependencias = {}) {
           await registrarElo(db, riot as ClienteRiot);
           return json(tabela(elo()));
         }
+        case 'GET /api/partida': {
+          const p = placar(db, q.get('match') ?? '', q.get('puuid') || undefined);
+          if (!p) throw new ErroHttp(404, 'Partida não encontrada no banco.');
+          return json(p);
+        }
+        case 'GET /api/jogadores':
+          return json(listarJogadores(db));
+        case 'GET /api/jogador':
+          return json(jogador(q.get('puuid') ?? ''));
+        case 'POST /api/jogadores/consultar':
+          try {
+            iniciarConsulta(corpo);
+          } catch (e) {
+            if (e instanceof ErroHttp) throw e;
+            throw new ErroHttp(400, e instanceof Error ? e.message : String(e));
+          }
+          return json(sync, 202);
+        case 'POST /api/jogadores/registrar':
+          try {
+            registrarJogador(db, String(corpo.puuid ?? ''), corpo.registrar === true);
+          } catch (e) {
+            throw new ErroHttp(404, e instanceof Error ? e.message : String(e));
+          }
+          return json(jogador(String(corpo.puuid)));
+        case 'GET /api/ddragon/itens':
+          return { ...json(await ddragon.itens()), cache: true };
+      }
+      if (r.metodo === 'GET' && r.caminho.startsWith('/api/ddragon/')) {
+        const [, , , tipo, nome] = r.caminho.split('/');
+        const img = tipo === 'campeao' ? await ddragon.iconeCampeao(nome ?? '') : tipo === 'item' ? await ddragon.iconeItem(nome ?? '') : null;
+        if (!img) return { status: 404, tipo: 'text/plain; charset=utf-8', corpo: 'Sem ícone' };
+        return { status: 200, tipo: 'image/png', corpo: img, cache: true };
       }
       if (r.metodo === 'GET' && r.caminho.startsWith('/api/grupo/')) {
         const por = r.caminho.slice('/api/grupo/'.length);

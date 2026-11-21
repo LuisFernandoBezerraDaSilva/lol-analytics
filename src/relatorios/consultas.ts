@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
-import { where, type Filtro } from './filtro.ts';
+import { fonte, where, type Filtro } from './filtro.ts';
 
 export type Linha = Record<string, string | number | null>;
 
@@ -47,7 +47,7 @@ export function agrupar(db: DatabaseSync, por: string, f: Filtro, minJogos = 1):
   const ordem = por === 'mes' || por === 'semana' || por === 'duracao' ? 'grupo' : 'jogos DESC, grupo';
   return db
     .prepare(
-      `SELECT ${expr} AS grupo, ${METRICAS} FROM v_minhas_partidas ${w.sql}
+      `SELECT ${expr} AS grupo, ${METRICAS} FROM ${fonte(f)} ${w.sql}
        GROUP BY grupo HAVING count(*) >= ? ORDER BY ${ordem}`,
     )
     .all(...w.params, minJogos) as Linha[];
@@ -55,7 +55,7 @@ export function agrupar(db: DatabaseSync, por: string, f: Filtro, minJogos = 1):
 
 export function resumo(db: DatabaseSync, f: Filtro): Linha | undefined {
   const w = where(f);
-  return db.prepare(`SELECT ${METRICAS} FROM v_minhas_partidas ${w.sql}`).get(...w.params) as Linha | undefined;
+  return db.prepare(`SELECT ${METRICAS} FROM ${fonte(f)} ${w.sql}`).get(...w.params) as Linha | undefined;
 }
 
 export function recentes(db: DatabaseSync, f: Filtro, n = 20): Linha[] {
@@ -66,7 +66,7 @@ export function recentes(db: DatabaseSync, f: Filtro, n = 20): Linha[] {
          CASE WHEN vitoria = 1 THEN 'V' ELSE 'D' END AS resultado,
          kills || '/' || deaths || '/' || assists AS kda_linha,
          duracao_min, ouro_min, cs_min, dano_min, kp_pct, dif_ouro_10
-       FROM (SELECT *, participacao_abates AS kp_pct FROM v_minhas_partidas) ${w.sql}
+       FROM (SELECT *, participacao_abates AS kp_pct FROM ${fonte(f)}) ${w.sql}
        ORDER BY inicio_ms DESC LIMIT ?`,
     )
     .all(...w.params, n) as Linha[];
@@ -84,7 +84,7 @@ export function curvaDeOuro(db: DatabaseSync, f: Filtro, ateMinuto = 30): Linha[
          round(avg(fm.ouro_total - fo.ouro_total)) AS diferenca,
          round(avg(fm.cs), 1) AS meu_cs,
          round(avg(fm.xp)) AS meu_xp
-       FROM v_minhas_partidas v
+       FROM ${fonte(f)} v
        JOIN frames fm ON fm.match_id = v.match_id AND fm.participant_id = v.participant_id
        LEFT JOIN frames fo ON fo.match_id = v.match_id AND fo.participant_id = v.oponente_id AND fo.minuto = fm.minuto
        ${w.sql ? `${w.sql} AND` : 'WHERE'} fm.minuto <= ?
@@ -99,7 +99,7 @@ export function abatesPorTempo(db: DatabaseSync, f: Filtro): Linha[] {
   const jogos = (
     db
       .prepare(
-        `SELECT count(*) AS n FROM v_minhas_partidas v ${w.sql} ${w.sql ? 'AND' : 'WHERE'}
+        `SELECT count(*) AS n FROM ${fonte(f)} v ${w.sql} ${w.sql ? 'AND' : 'WHERE'}
          EXISTS (SELECT 1 FROM timelines t WHERE t.match_id = v.match_id)`,
       )
       .get(...w.params) as { n: number }
@@ -110,7 +110,7 @@ export function abatesPorTempo(db: DatabaseSync, f: Filtro): Linha[] {
          sum(e.participant_id = v.participant_id) AS kills,
          sum(e.vitima_id = v.participant_id) AS mortes,
          sum(instr(',' || coalesce(e.assistencias, '') || ',', ',' || v.participant_id || ',') > 0) AS assistencias
-       FROM v_minhas_partidas v
+       FROM ${fonte(f)} v
        JOIN eventos e ON e.match_id = v.match_id AND e.tipo = 'CHAMPION_KILL'
        ${w.sql}
        GROUP BY de_min ORDER BY de_min`,

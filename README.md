@@ -26,7 +26,16 @@ Para trocar de computador, leve os três juntos.
 
 O app tem abas para a visão geral, as viradas de ouro partida a partida, as causas somadas,
 os grupos (campeão, posição, oponente, mês, duração), a curva de ouro, os abates por tempo,
-a lista de partidas, o elo e a exportação para CSV. Os filtros do topo valem para todas as abas.
+a lista de partidas, outros jogadores, o elo e a exportação para CSV. Os filtros do topo valem
+para todas as abas.
+
+- **Placar completo:** clique numa partida para ver os 10 jogadores com K/D/A, CS, ouro, dano,
+  visão e itens (com ícones). Clique no nome de alguém para consultar esse jogador.
+- **Outros jogadores (aba Jogadores):** digite o Riot ID e o app baixa as partidas recentes
+  dele (10, 20 ou 40). Os dados dele nunca entram nos seus relatórios. A consulta é eventual:
+  ao consultar outra pessoa, a anterior é apagada do banco. Para acompanhar alguém sempre,
+  clique em **Registrar em memória**: o histórico fica guardado e é atualizado (últimas 20
+  partidas) a cada sincronização. **Remover da memória** volta a ser eventual.
 
 Detalhes:
 
@@ -34,6 +43,8 @@ Detalhes:
 - O .exe não é assinado digitalmente. Na primeira execução o Windows pode mostrar
   "O Windows protegeu o computador": clique em **Mais informações** e **Executar assim mesmo**.
 - Os gráficos usam o [Chart.js](https://www.chartjs.org) (MIT), embutido no .exe e sem internet.
+- Os ícones e nomes de itens vêm do Data Dragon, o CDN público da Riot (sem chave). Cada ícone
+  é baixado uma vez e guardado em `data\ddragon`; sem internet, o placar mostra só o texto.
 - O banco é SQLite, o mesmo que já vem dentro do Node (`node:sqlite`).
 
 ### Gerar o .exe
@@ -213,6 +224,6 @@ associated properties are trademarks or registered trademarks of Riot Games, Inc
 ## Desenvolvimento
 
 ```powershell
-npm test          # 48 testes com partidas sintéticas; nenhum chama a Riot
+npm test          # 56 testes com partidas sintéticas; nenhum chama a Riot
 npm run typecheck
 ```

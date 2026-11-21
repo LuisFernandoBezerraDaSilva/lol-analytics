@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
-import { where, type Filtro } from '../relatorios/filtro.ts';
+import { fonte, where, type Filtro } from '../relatorios/filtro.ts';
 
 /**
  * Explica as viradas de ouro entre você e o oponente de rota.
@@ -150,7 +150,7 @@ const NOME_ZONA: Record<Zona, string> = {
 
 export function carregarContexto(db: DatabaseSync, matchId: string, participanteId: number): Contexto | null {
   const v = db
-    .prepare('SELECT data, vitoria, participant_id, oponente_id FROM v_minhas_partidas WHERE match_id = ? AND participant_id = ?')
+    .prepare('SELECT data, vitoria, participant_id, oponente_id FROM v_partidas_jogador WHERE match_id = ? AND participant_id = ?')
     .get(matchId, participanteId) as { data: string; vitoria: number; participant_id: number; oponente_id: number | null } | undefined;
   if (!v || v.oponente_id === null) return null;
 
@@ -506,7 +506,7 @@ export function partidasAnalisaveis(db: DatabaseSync, f: Filtro, limite?: number
   const w = where(f, 'v');
   return db
     .prepare(
-      `SELECT v.match_id, v.participant_id FROM v_minhas_partidas v ${w.sql} ${w.sql ? 'AND' : 'WHERE'}
+      `SELECT v.match_id, v.participant_id FROM ${fonte(f)} v ${w.sql} ${w.sql ? 'AND' : 'WHERE'}
        v.oponente_id IS NOT NULL AND EXISTS (SELECT 1 FROM timelines t WHERE t.match_id = v.match_id)
        ORDER BY v.inicio_ms DESC ${limite ? 'LIMIT ?' : ''}`,
     )
