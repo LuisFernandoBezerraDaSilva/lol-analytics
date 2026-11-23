@@ -42,7 +42,7 @@ export function limparConsultasAvulsas(db: DatabaseSync, manter?: string): numbe
       )
       .all(...params) as Array<{ match_id: string }>;
     for (const { match_id } of orfas) {
-      for (const t of ['eventos', 'frames', 'participantes', 'timelines', 'partidas']) {
+      for (const t of ['analise_viradas', 'eventos', 'frames', 'participantes', 'timelines', 'partidas']) {
         db.prepare(`DELETE FROM ${t} WHERE match_id = ?`).run(match_id);
       }
     }

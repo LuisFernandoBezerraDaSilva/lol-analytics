@@ -115,6 +115,20 @@ CREATE TABLE IF NOT EXISTS jogadores (
   consultado_em TEXT NOT NULL
 );
 
+-- Resultado da análise das viradas de ouro, calculado uma vez por partida e jogador.
+-- A chave inclui o limiar, a janela e a versão do algoritmo: mudar qualquer um deles gera uma
+-- análise nova, sem apagar a partida. Regravar a partida (reprocessar) apaga a análise dela.
+CREATE TABLE IF NOT EXISTS analise_viradas (
+  match_id TEXT NOT NULL,
+  participant_id INTEGER NOT NULL,
+  limiar INTEGER NOT NULL,
+  janela INTEGER NOT NULL,
+  versao INTEGER NOT NULL,
+  json TEXT NOT NULL,
+  calculado_em TEXT NOT NULL,
+  PRIMARY KEY (match_id, participant_id, limiar, janela, versao)
+);
+
 -- Partidas de qualquer jogador (uma linha por jogador por partida), com as métricas por minuto
 -- e a comparação com o oponente de rota. v_minhas_partidas é esta view só com as suas contas.
 DROP VIEW IF EXISTS v_minhas_partidas;

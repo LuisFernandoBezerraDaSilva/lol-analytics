@@ -64,7 +64,7 @@ export async function sincronizar(db: DatabaseSync, riot: ClienteRiot, ids: Riot
     ).run(conta.puuid, conta.gameName, conta.tagLine);
 
     const { ids: novos, chegouAoFim } = await idsNovos(db, riot, conta.puuid, o);
-    log(`${nome}: ${novos.length} partida(s) nova(s) para baixar.`);
+    log(`${nome}: ${novos.length} partida(s) nova(s) para baixar (as que já estão salvas não são baixadas de novo).`);
     const r: ResultadoSync = { conta: nome, novas: 0, semTimeline: 0, indisponiveis: 0 };
     for (const [i, matchId] of novos.entries()) {
       const partida = await riot.partida(matchId);

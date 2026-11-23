@@ -110,6 +110,11 @@ Cada partida custa 2 requisições (partida + timeline). Com o limite de 100 a c
 são cerca de 50 partidas a cada 2 minutos. O sync espera sozinho quando chega no limite e passa a
 usar os limites reais da sua chave, que a Riot informa em toda resposta (header `X-App-Rate-Limit`).
 
+A atualização é incremental: o sync compara a lista de partidas da Riot com o banco e baixa só
+as que faltam. Nada é baixado de novo, recalculado ou apagado: as partidas antigas e as análises
+delas continuam como estavam. As únicas coisas apagadas automaticamente são as consultas eventuais
+de outros jogadores (veja a aba Jogadores).
+
 ### Relatórios
 
 | Comando | O que mostra |
@@ -144,6 +149,10 @@ Como funciona:
    farm ou objetivos. Do lado bom: abate 1x1, gank do seu caçador, seu roam ou abates em luta.
 5. Escreve dicas por regra, por exemplo sentinela antes do gank, nível na hora da troca perdida
    e o que fazer quando o oponente some da rota.
+6. Guarda o resultado na tabela `analise_viradas`. Cada partida é analisada uma vez só, e o
+   sync analisa só as partidas novas. A análise de uma partida só é refeita quando ela é
+   regravada (`npm run reprocessar`), quando você usa outro `--limiar`/`--janela` (que vira uma
+   análise separada) ou quando as regras mudam no código (`VERSAO_ANALISE` em `src/analise/ouro.ts`).
 
 A zona do mapa (top, mid, bot, rio, selva) é aproximada pelas coordenadas do evento. ARAM e Arena
 ficam de fora, porque não têm oponente de rota.
@@ -224,6 +233,6 @@ associated properties are trademarks or registered trademarks of Riot Games, Inc
 ## Desenvolvimento
 
 ```powershell
-npm test          # 56 testes com partidas sintéticas; nenhum chama a Riot
+npm test          # 62 testes com partidas sintéticas; nenhum chama a Riot
 npm run typecheck
 ```

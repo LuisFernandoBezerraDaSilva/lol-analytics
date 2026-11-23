@@ -502,6 +502,70 @@ export interface ResumoCausas {
 }
 
 /** Partidas suas com timeline e oponente de rota, da mais nova para a mais antiga. */
+// ---------------------------------------------------------------- análise salva
+
+/**
+ * Versão do algoritmo das viradas. Suba este número quando mudar as regras: as análises
+ * salvas com a versão antiga deixam de valer e são refeitas na próxima leitura.
+ */
+export const VERSAO_ANALISE = 1;
+
+/** O que fica salvo de cada partida: o bastante para as listas e o resumo das causas. */
+export interface AnaliseSalva {
+  matchId: string;
+  data: string;
+  vitoria: boolean;
+  campeao: string;
+  oponente: string;
+  diferencaFinal: number;
+  episodios: Episodio[];
+}
+
+/**
+ * A análise da partida para esse jogador: lida do banco se já foi feita, senão calculada
+ * uma vez e guardada. `calculou` diz se precisou calcular agora.
+ */
+export function analiseDaPartida(
+  db: DatabaseSync,
+  matchId: string,
+  participanteId: number,
+  o: OpcoesAnalise = PADRAO_ANALISE,
+): { analise: AnaliseSalva; calculou: boolean } | null {
+  const salva = db
+    .prepare('SELECT json FROM analise_viradas WHERE match_id = ? AND participant_id = ? AND limiar = ? AND janela = ? AND versao = ?')
+    .get(matchId, participanteId, o.limiar, o.janela, VERSAO_ANALISE) as { json: string } | undefined;
+  if (salva) return { analise: JSON.parse(salva.json) as AnaliseSalva, calculou: false };
+  const an = analisarPartida(db, matchId, participanteId, o);
+  if (!an) return null;
+  const analise: AnaliseSalva = {
+    matchId,
+    data: an.ctx.data,
+    vitoria: an.ctx.vitoria,
+    campeao: an.ctx.eu.campeao,
+    oponente: an.ctx.op.campeao,
+    diferencaFinal: an.diferenca.at(-1) ?? 0,
+    episodios: an.episodios,
+  };
+  db.prepare(
+    `INSERT OR REPLACE INTO analise_viradas (match_id, participant_id, limiar, janela, versao, json, calculado_em)
+     VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
+  ).run(matchId, participanteId, o.limiar, o.janela, VERSAO_ANALISE, JSON.stringify(analise));
+  return { analise, calculou: true };
+}
+
+/**
+ * Calcula só as análises que ainda não existem: suas partidas e as dos jogadores registrados.
+ * Apaga as análises de versões antigas do algoritmo. Devolve quantas foram calculadas agora.
+ */
+export function calcularAnalisesNovas(db: DatabaseSync, o: OpcoesAnalise = PADRAO_ANALISE): number {
+  db.prepare('DELETE FROM analise_viradas WHERE versao <> ?').run(VERSAO_ANALISE);
+  const registrados = db.prepare('SELECT puuid FROM jogadores WHERE registrado = 1').all() as Array<{ puuid: string }>;
+  const alvos = [partidasAnalisaveis(db, {}), ...registrados.map((r) => partidasAnalisaveis(db, { puuid: r.puuid }))].flat();
+  let novas = 0;
+  for (const p of alvos) if (analiseDaPartida(db, p.match_id, p.participant_id, o)?.calculou) novas++;
+  return novas;
+}
+
 export function partidasAnalisaveis(db: DatabaseSync, f: Filtro, limite?: number): Array<{ match_id: string; participant_id: number }> {
   const w = where(f, 'v');
   return db
@@ -519,7 +583,7 @@ export function resumirCausas(db: DatabaseSync, f: Filtro, o: OpcoesAnalise = PA
   let ganks = 0;
   let ganksSemSentinela = 0;
   for (const p of partidas) {
-    const a = analisarPartida(db, p.match_id, p.participant_id, o);
+    const a = analiseDaPartida(db, p.match_id, p.participant_id, o)?.analise;
     if (!a) continue;
     for (const ep of a.episodios) {
       const mapa = ep.variacao < 0 ? acum.perdas : acum.ganhos;

@@ -1,7 +1,7 @@
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import type { DatabaseSync } from 'node:sqlite';
-import { analisarPartida, NOME_CAUSA, PADRAO_ANALISE, partidasAnalisaveis, relogio, resumirCausas, type OpcoesAnalise } from './analise/ouro.ts';
+import { analiseDaPartida, analisarPartida, calcularAnalisesNovas, NOME_CAUSA, PADRAO_ANALISE, partidasAnalisaveis, relogio, resumirCausas, type OpcoesAnalise } from './analise/ouro.ts';
 import { carregarConfig, carregarDbPath } from './config.ts';
 import { abrirBanco } from './db.ts';
 import { idDaFila, nomeDaFila } from './filas.ts';
@@ -156,16 +156,16 @@ function relatorioOuro(db: DatabaseSync, a: Args, id: string | undefined): void 
 function relatorioViradas(db: DatabaseSync, a: Args, n: number): void {
   const o = opcoesAnalise(a);
   const linhas = partidasAnalisaveis(db, filtro(a), n).map((p) => {
-    const an = analisarPartida(db, p.match_id, p.participant_id, o)!;
+    const an = analiseDaPartida(db, p.match_id, p.participant_id, o)!.analise;
     const perda = an.episodios.filter((e) => e.variacao < 0).sort((x, y) => x.variacao - y.variacao)[0];
     const ganho = an.episodios.filter((e) => e.variacao > 0).sort((x, y) => y.variacao - x.variacao)[0];
     const desc = (e: typeof perda) => (e ? `${comSinal(e.variacao)} aos ${e.inicio}-${e.fim} min: ${NOME_CAUSA[e.causaPrincipal]}` : '-');
     return {
-      match_id: an.ctx.matchId,
-      data: an.ctx.data.slice(0, 16),
-      campeao: an.ctx.eu.campeao,
-      oponente: an.ctx.op.campeao,
-      resultado: an.ctx.vitoria ? 'V' : 'D',
+      match_id: an.matchId,
+      data: an.data.slice(0, 16),
+      campeao: an.campeao,
+      oponente: an.oponente,
+      resultado: an.vitoria ? 'V' : 'D',
       maior_perda: desc(perda),
       maior_ganho: desc(ganho),
     };
@@ -219,6 +219,7 @@ async function cmdSync(a: Args): Promise<void> {
   const n = await registrarElo(db, riot);
   const seg = Math.round((Date.now() - inicio) / 1000);
   console.log(`Elo registrado (${n} fila(s)). ${riot.requisicoes} requisições em ${seg}s.`);
+  console.log(`Análise de ouro: ${calcularAnalisesNovas(db)} partida(s) nova(s) analisada(s); as anteriores continuam salvas.`);
   if (Number.isFinite(max) && res.some((r) => r.novas >= max)) {
     console.log('Ainda há partidas antigas: rode o sync de novo (ou use --tudo).');
   }

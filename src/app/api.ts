@@ -3,7 +3,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { DataDragon } from '../ddragon.ts';
 import { atualizarJogador, atualizarRegistrados, consultarJogador, listarJogadores, registrarJogador } from '../jogadores.ts';
 import { placar } from '../relatorios/placar.ts';
-import { analisarPartida, NOME_CAUSA, PADRAO_ANALISE, partidasAnalisaveis, resumirCausas, type OpcoesAnalise } from '../analise/ouro.ts';
+import { analiseDaPartida, analisarPartida, calcularAnalisesNovas, NOME_CAUSA, PADRAO_ANALISE, partidasAnalisaveis, resumirCausas, type OpcoesAnalise } from '../analise/ouro.ts';
 import { carregarConfig } from '../config.ts';
 import { resumoConfig, salvarConfig, type NovaConfig } from '../configurar.ts';
 import { FILAS, idDaFila, nomeDaFila } from '../filas.ts';
@@ -173,6 +173,8 @@ export function criarApi(db: DatabaseSync, deps: Dependencias = {}) {
         log('Atualizando os jogadores registrados em memória…');
         await atualizarRegistrados(db, riot as ClienteRiot, 20, log);
       }
+      const analises = calcularAnalisesNovas(db);
+      log(`Análise de ouro: ${analises} partida(s) nova(s) analisada(s); as anteriores continuam salvas.`);
       log('Pronto.');
     });
   }
@@ -270,17 +272,17 @@ export function criarApi(db: DatabaseSync, deps: Dependencias = {}) {
   function viradas(q: URLSearchParams) {
     const o = opcoesAnalise(q);
     return partidasAnalisaveis(db, filtroDaQuery(q), inteiro(q, 'n', 30)).map((p) => {
-      const an = analisarPartida(db, p.match_id, p.participant_id, o)!;
+      const an = analiseDaPartida(db, p.match_id, p.participant_id, o)!.analise;
       const perda = an.episodios.filter((e) => e.variacao < 0).sort((x, y) => x.variacao - y.variacao)[0];
       const ganho = an.episodios.filter((e) => e.variacao > 0).sort((x, y) => y.variacao - x.variacao)[0];
       const resumir = (e: typeof perda) => (e ? { variacao: e.variacao, inicio: e.inicio, fim: e.fim, causa: NOME_CAUSA[e.causaPrincipal] } : null);
       return {
-        matchId: an.ctx.matchId,
-        data: an.ctx.data,
-        campeao: an.ctx.eu.campeao,
-        oponente: an.ctx.op.campeao,
-        vitoria: an.ctx.vitoria,
-        difFinal: an.diferenca.at(-1) ?? 0,
+        matchId: an.matchId,
+        data: an.data,
+        campeao: an.campeao,
+        oponente: an.oponente,
+        vitoria: an.vitoria,
+        difFinal: an.diferencaFinal,
         maiorPerda: resumir(perda),
         maiorGanho: resumir(ganho),
       };
