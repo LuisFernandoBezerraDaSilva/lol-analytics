@@ -24,10 +24,22 @@ O jeito mais simples de usar é o `lol-analytics.exe`: um arquivo só, sem insta
 Tudo fica ao lado do .exe: o `.env` com a configuração e a pasta `data` com o banco (`lol.db`).
 Para trocar de computador, leve os três juntos.
 
-O app tem abas para a visão geral, as viradas de ouro partida a partida, as causas somadas,
-os grupos (campeão, posição, oponente, mês, duração), a curva de ouro, os abates por tempo,
-a lista de partidas, outros jogadores, o elo e a exportação para CSV. Os filtros do topo valem
-para todas as abas.
+O app tem abas para a visão geral, o desempenho por campeão, as viradas de ouro partida a
+partida, as causas somadas, os grupos (campeão, posição, oponente, mês, duração), a curva de
+ouro, os abates por tempo, a lista de partidas, outros jogadores, o elo e a exportação para CSV.
+Os filtros do topo (fila, período, posição e campeão) valem para todas as abas. Na aba Jogadores,
+a lista de campeões é a do jogador consultado. Na aba Elo, a fila escolhe Solo/Duo ou Flex.
+
+- **Desempenho:** um ranking dos seus campeões, no geral ou separado por rota, e o melhor de
+  cada rota em cada critério. Clicar numa coluna põe o melhor em cima.
+  - **% Vit:** partidas ganhas sobre jogadas.
+  - **% Stomp:** chegou aos 15 minutos com 1.000 de ouro ou mais sobre o oponente de rota,
+    ganhando ou perdendo o jogo. **Stomp e derrota** conta os stomps que terminaram em derrota.
+  - **% Acertos (macro):** média da participação nos abates do time, da participação nos
+    objetivos do time (dragões, arautos, vastilarvas, barão e torres) e da visão comparada ao
+    oponente de rota (50% = igual a ele).
+  - **Erros/jogo:** viradas de ouro contra você em que você morreu (gank, 1x1 ou luta).
+    Menor é melhor.
 
 - **Placar completo:** clique numa partida para ver os 10 jogadores com K/D/A, CS, ouro, dano,
   visão e itens (com ícones). Clique no nome de alguém para consultar esse jogador.
@@ -233,6 +245,6 @@ associated properties are trademarks or registered trademarks of Riot Games, Inc
 ## Desenvolvimento
 
 ```powershell
-npm test          # 62 testes com partidas sintéticas; nenhum chama a Riot
+npm test          # 68 testes com partidas sintéticas; nenhum chama a Riot
 npm run typecheck
 ```

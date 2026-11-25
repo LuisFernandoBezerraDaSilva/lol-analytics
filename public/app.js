@@ -52,11 +52,15 @@ function vazio(msg) {
   return el('div', { class: 'vazio' }, msg);
 }
 
-/** Tabela ordenável. `colunas`: [{chave, rotulo}]. Células numéricas alinhadas à direita. */
-function tabela(colunas, linhas, { aoClicar, selecionada, cores = [] } = {}) {
+/**
+ * Tabela ordenável. `colunas`: [{chave, rotulo}]. Células numéricas alinhadas à direita.
+ * O primeiro clique numa coluna põe o melhor em cima: maior primeiro, ou menor primeiro
+ * nas colunas de `menorMelhor` (ex.: erros). `ordenarPor` define a ordem inicial.
+ */
+function tabela(colunas, linhas, { aoClicar, selecionada, cores = [], menorMelhor = [], ordenarPor = null } = {}) {
   if (!linhas.length) return vazio('Nenhuma partida com esses filtros.');
-  let ordem = null;
-  let desc = true;
+  let ordem = ordenarPor;
+  let desc = ordenarPor ? !menorMelhor.includes(ordenarPor) : true;
   const corpo = el('tbody');
   const ehNum = (c) => linhas.every((l) => l[c] === null || typeof l[c] === 'number');
   const desenhar = () => {
@@ -99,7 +103,7 @@ function tabela(colunas, linhas, { aoClicar, selecionada, cores = [] } = {}) {
           class: ehNum(c.chave) ? 'num' : undefined,
           title: 'Clique para ordenar',
           onclick: () => {
-            desc = ordem === c.chave ? !desc : true;
+            desc = ordem === c.chave ? !desc : !menorMelhor.includes(c.chave);
             ordem = c.chave;
             desenhar();
           },
@@ -289,6 +293,56 @@ const ABAS = {
         ),
       ),
     );
+  },
+
+  async desempenho() {
+    const porRota = el('input', { type: 'checkbox' });
+    const minJogos = el('input', { type: 'number', min: 1, value: 1 });
+    try {
+      porRota.checked = sessionStorage.getItem('porRota') === '1';
+      minJogos.value = sessionStorage.getItem('minJogosDesempenho') || 1;
+    } catch { /* sem storage */ }
+    const caixa = el('div', {}, vazio('Carregando…'));
+    const ROTA = { TOP: 'Top', JUNGLE: 'Selva', MIDDLE: 'Mid', BOTTOM: 'Atirador', UTILITY: 'Suporte' };
+    const carregar = async () => {
+      try { sessionStorage.setItem('porRota', porRota.checked ? '1' : '0'); sessionStorage.setItem('minJogosDesempenho', minJogos.value); } catch { /* sem storage */ }
+      const r = await api('/api/desempenho', filtros({ porRota: porRota.checked ? '1' : '', minJogos: minJogos.value }));
+      const linhas = r.linhas.map((l) => ({ ...l, posicao: l.posicao ? ROTA[l.posicao] || l.posicao : null }));
+      const chaves = ['campeao', ...(porRota.checked ? ['posicao'] : []), 'jogos', 'vitoria_pct', 'stomp_pct', 'stomp_derrota', 'acertos_pct', 'kp_pct', 'objetivos_pct', 'visao_pct', 'erros_jogo', 'kda'];
+      const colunas = chaves.map((k) => ({ chave: k, rotulo: k === 'campeao' ? 'Campeão' : k === 'posicao' ? 'Rota' : (r.colunas.find((c) => c.chave === k) || { rotulo: k }).rotulo }));
+      const melhores = r.melhores.map((m) => ({ ...m, posicao: ROTA[m.posicao] || m.posicao }));
+      caixa.replaceChildren(
+        el('section', { class: 'painel' },
+          el('h2', {}, 'Seu melhor campeão em cada rota'),
+          melhores.length
+            ? tabela(
+                [{ chave: 'posicao', rotulo: 'Rota' }, { chave: 'vitoria', rotulo: 'Mais vitórias' }, { chave: 'stomp', rotulo: 'Mais stomps' }, { chave: 'acertos', rotulo: 'Mais acertos' }, { chave: 'menos_erros', rotulo: 'Menos erros' }],
+                melhores,
+              )
+            : vazio('Sem partidas com rota definida nesses filtros (ARAM e Arena não têm rota).')),
+        el('section', { class: 'painel' },
+          el('h2', {}, porRota.checked ? 'Por campeão e rota' : 'Por campeão'),
+          el('p', { class: 'ajuda' }, 'Clique no título de uma coluna para ordenar: o melhor fica em cima (em Erros/jogo e Stomp e derrota, o menor).'),
+          tabela(colunas, linhas, { menorMelhor: ['erros_jogo', 'stomp_derrota'], ordenarPor: 'vitoria_pct' })),
+      );
+    };
+    porRota.addEventListener('change', () => carregar().catch((e) => caixa.replaceChildren(el('p', { class: 'erro' }, e.message))));
+    minJogos.addEventListener('change', () => carregar().catch((e) => caixa.replaceChildren(el('p', { class: 'erro' }, e.message))));
+    await carregar();
+    const legenda = el('section', { class: 'painel' },
+      el('h3', {}, 'Como cada número é calculado'),
+      el('ul', { class: 'ajuda' },
+        el('li', {}, '% Vit: partidas ganhas sobre partidas jogadas.'),
+        el('li', {}, '% Stomp: partidas em que você chegou aos 15 minutos com 1.000 de ouro ou mais sobre o oponente de rota, ganhando ou perdendo o jogo. "Stomp e derrota" conta as que terminaram em derrota mesmo assim.'),
+        el('li', {}, '% Acertos (macro): média de três participações. Abates do time (% Part.), objetivos do time (dragões, arautos, vastilarvas, barão e torres) e visão comparada ao oponente de rota (50% = igual a ele).'),
+        el('li', {}, 'Erros/jogo: viradas de ouro contra você em que você morreu (gank, 1x1 ou luta), pela análise das viradas. Menor é melhor.'),
+        el('li', {}, 'Stomp, objetivos, visão e erros só contam partidas com timeline e oponente de rota.'),
+      ));
+    return el('div', {},
+      el('section', { class: 'painel' },
+        el('div', { class: 'linha-form' }, el('label', { class: 'check' }, porRota, ' Separar por rota'), el('label', {}, 'Mínimo de jogos', minJogos)),
+        el('p', { class: 'ajuda' }, 'Os filtros lá de cima (fila, período, posição e campeão) também valem aqui.')),
+      caixa, legenda);
   },
 
   async ouro() {
@@ -567,14 +621,16 @@ Object.assign(ABAS, {
   async elo() {
     const caixa = el('div', {});
     const desenhar = (r) => caixa.replaceChildren(r.linhas.length ? tabela(r.colunas, r.linhas) : vazio('Sem elo registrado. Sincronize ou clique em Atualizar.'));
-    desenhar(await api('/api/elo'));
+    const fila = $('#fFila').value;
+    const qFila = fila ? new URLSearchParams({ fila }) : null;
+    desenhar(await api('/api/elo', qFila));
     const erro = el('p', { class: 'erro' });
     const botao = el('button', {
       class: 'secundario',
       onclick: async () => {
         botao.disabled = true;
         erro.textContent = '';
-        try { desenhar(await post('/api/elo', {})); } catch (e) { erro.textContent = e.message; } finally { botao.disabled = false; }
+        try { desenhar(await post(qFila ? `/api/elo?${qFila}` : '/api/elo', {})); } catch (e) { erro.textContent = e.message; } finally { botao.disabled = false; }
       },
     }, 'Atualizar elo agora');
     return el('section', { class: 'painel' }, el('h2', {}, 'Elo atual'), caixa, erro, botao);
@@ -631,6 +687,12 @@ async function mostrar(aba) {
   for (const b of document.querySelectorAll('.abas button')) b.classList.toggle('ativa', b.dataset.aba === aba);
   conteudo.replaceChildren(vazio('Carregando…'));
   try {
+    // Na aba Jogadores, o filtro de campeão lista os campeões do jogador consultado.
+    const dono = aba === 'jogadores' && jogadorAtual ? jogadorAtual : null;
+    if (dono !== opcoesDe) {
+      opcoesDe = dono;
+      await carregarOpcoes();
+    }
     conteudo.replaceChildren(await ABAS[aba]());
     limparGraficos();
   } catch (e) {
@@ -652,8 +714,11 @@ async function atualizarEstado() {
   return e;
 }
 
+/** De quem são os campeões do filtro: null = as suas contas; puuid = jogador consultado. */
+let opcoesDe = null;
+
 async function carregarOpcoes() {
-  const o = await api('/api/opcoes');
+  const o = await api('/api/opcoes', opcoesDe ? new URLSearchParams({ puuid: opcoesDe }) : null);
   const preencher = (sel, itens, primeiro) => {
     const atual = sel.value;
     sel.replaceChildren(el('option', { value: '' }, primeiro), ...itens.map(([v, t]) => el('option', { value: v }, t)));

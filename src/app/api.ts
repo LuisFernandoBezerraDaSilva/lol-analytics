@@ -2,6 +2,7 @@ import { resolve } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { DataDragon } from '../ddragon.ts';
 import { atualizarJogador, atualizarRegistrados, consultarJogador, listarJogadores, registrarJogador } from '../jogadores.ts';
+import { desempenhoPorCampeao, melhoresPorRota } from '../relatorios/desempenho.ts';
 import { placar } from '../relatorios/placar.ts';
 import { analiseDaPartida, analisarPartida, calcularAnalisesNovas, NOME_CAUSA, PADRAO_ANALISE, partidasAnalisaveis, resumirCausas, type OpcoesAnalise } from '../analise/ouro.ts';
 import { carregarConfig } from '../config.ts';
@@ -214,16 +215,20 @@ export function criarApi(db: DatabaseSync, deps: Dependencias = {}) {
     return { ...j, elo };
   }
 
-  function elo(): Linha[] {
+  /** Elo atual. Com o filtro de fila em Solo/Duo ou Flex, mostra só aquela fila ranqueada. */
+  function elo(filaApelido?: string | null): Linha[] {
+    const FILA_RANQUEADA: Record<string, string> = { solo: 'RANKED_SOLO_5x5', '420': 'RANKED_SOLO_5x5', flex: 'RANKED_FLEX_SR', '440': 'RANKED_FLEX_SR' };
+    const fila = filaApelido ? FILA_RANQUEADA[filaApelido.toLowerCase()] : undefined;
     return db
       .prepare(
         `SELECT c.game_name || '#' || c.tag_line AS conta, e.fila, e.tier || ' ' || e.divisao AS elo, e.pdl,
            e.vitorias, e.derrotas, round(e.vitorias * 100.0 / max(e.vitorias + e.derrotas, 1), 1) AS vitoria_pct, e.registrado_em
          FROM elo e JOIN contas c ON c.puuid = e.puuid
          WHERE e.registrado_em = (SELECT max(x.registrado_em) FROM elo x WHERE x.puuid = e.puuid AND x.fila = e.fila)
+           ${fila ? 'AND e.fila = ?' : ''}
          ORDER BY conta, e.fila`,
       )
-      .all() as Linha[];
+      .all(...(fila ? [fila] : [])) as Linha[];
   }
 
   function ouro(q: URLSearchParams) {
@@ -314,7 +319,13 @@ export function criarApi(db: DatabaseSync, deps: Dependencias = {}) {
           }
           return json(sync, 202);
         case 'GET /api/opcoes': {
-          const campeoes = db.prepare('SELECT DISTINCT campeao FROM v_minhas_partidas ORDER BY campeao').all() as Array<{ campeao: string }>;
+          // Com puuid (aba Jogadores), a lista de campeões é a do jogador consultado.
+          const puuid = q.get('puuid');
+          const campeoes = (
+            puuid
+              ? db.prepare('SELECT DISTINCT campeao FROM v_partidas_jogador WHERE puuid = ? ORDER BY campeao').all(puuid)
+              : db.prepare('SELECT DISTINCT campeao FROM v_minhas_partidas ORDER BY campeao').all()
+          ) as Array<{ campeao: string }>;
           return json({
             filas: Object.entries(FILAS).map(([apelido, f]) => ({ apelido, nome: f.nome })),
             campeoes: campeoes.map((c) => c.campeao),
@@ -336,11 +347,19 @@ export function criarApi(db: DatabaseSync, deps: Dependencias = {}) {
         case 'GET /api/causas':
           return json(resumirCausas(db, filtroDaQuery(q), opcoesAnalise(q)));
         case 'GET /api/elo':
-          return json(tabela(elo()));
+          return json(tabela(elo(q.get('fila'))));
         case 'POST /api/elo': {
           const { riot } = criarRiot();
           await registrarElo(db, riot as ClienteRiot);
-          return json(tabela(elo()));
+          return json(tabela(elo(q.get('fila'))));
+        }
+        case 'GET /api/desempenho': {
+          const f = filtroDaQuery(q);
+          const minJogos = inteiro(q, 'minJogos', 1);
+          return json({
+            ...tabela(desempenhoPorCampeao(db, f, { porRota: q.get('porRota') === '1', minJogos }) as unknown as Linha[]),
+            melhores: melhoresPorRota(db, f, minJogos),
+          });
         }
         case 'GET /api/partida': {
           const p = placar(db, q.get('match') ?? '', q.get('puuid') || undefined);
