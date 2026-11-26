@@ -1,5 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { fonte, where, type Filtro } from '../relatorios/filtro.ts';
+import { pesoDaPartida, VERSAO_PESO } from './peso.ts';
 
 /**
  * Explica as viradas de ouro entre você e o oponente de rota.
@@ -559,10 +560,14 @@ export function analiseDaPartida(
  */
 export function calcularAnalisesNovas(db: DatabaseSync, o: OpcoesAnalise = PADRAO_ANALISE): number {
   db.prepare('DELETE FROM analise_viradas WHERE versao <> ?').run(VERSAO_ANALISE);
+  db.prepare('DELETE FROM analise_peso WHERE versao <> ?').run(VERSAO_PESO);
   const registrados = db.prepare('SELECT puuid FROM jogadores WHERE registrado = 1').all() as Array<{ puuid: string }>;
   const alvos = [partidasAnalisaveis(db, {}), ...registrados.map((r) => partidasAnalisaveis(db, { puuid: r.puuid }))].flat();
   let novas = 0;
-  for (const p of alvos) if (analiseDaPartida(db, p.match_id, p.participant_id, o)?.calculou) novas++;
+  for (const p of alvos) {
+    if (analiseDaPartida(db, p.match_id, p.participant_id, o)?.calculou) novas++;
+    pesoDaPartida(db, p.match_id, p.participant_id);
+  }
   return novas;
 }
 

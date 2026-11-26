@@ -49,7 +49,7 @@ export function gravarPartida(db: DatabaseSync, partida: Partida, timeline: Time
 
 function derivar(db: DatabaseSync, partida: Partida, timeline: Timeline | null): void {
   const id = partida.metadata.matchId;
-  for (const t of ['participantes', 'frames', 'eventos', 'analise_viradas']) db.prepare(`DELETE FROM ${t} WHERE match_id = ?`).run(id);
+  for (const t of ['participantes', 'frames', 'eventos', 'analise_viradas', 'analise_peso']) db.prepare(`DELETE FROM ${t} WHERE match_id = ?`).run(id);
 
   const insP = db.prepare(
     `INSERT INTO participantes (match_id, participant_id, puuid, riot_id, time_id, campeao, campeao_id, posicao,

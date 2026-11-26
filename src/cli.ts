@@ -269,7 +269,7 @@ function cmdRelatorio(a: Args, positionals: string[]): void {
     console.log('\nViradas de ouro contra o oponente de rota:\n');
     relatorioCausas(db, { ...a, campeao: nome });
     console.log('\nÚltimas partidas:\n');
-    console.log(imprimirTabela(recentes(db, f, n)));
+    console.log(imprimirTabela(recentes(db, f, n).map(({ participant_id: _, ...l }) => l)));
     return;
   }
 
@@ -283,7 +283,7 @@ function cmdRelatorio(a: Args, positionals: string[]): void {
     const r = resumo(db, f);
     if (r?.jogos) console.log(`\nTotal: ${r.jogos} jogos, ${r.vitoria_pct}% de vitória, KDA ${r.kda}, ${r.ouro_min} ouro/min.`);
   } else if (tipo === 'recentes') {
-    console.log(imprimirTabela(recentes(db, f, n)));
+    console.log(imprimirTabela(recentes(db, f, n).map(({ participant_id: _, ...l }) => l)));
   } else if (tipo === 'curva') {
     console.log(imprimirTabela(curvaDeOuro(db, f, ate)));
   } else if (tipo === 'abates') {

@@ -1,5 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { analiseDaPartida, PADRAO_ANALISE, type Causa } from '../analise/ouro.ts';
+import { pesoDaPartida } from '../analise/peso.ts';
 import { fonte, where, type Filtro } from './filtro.ts';
 
 /**
@@ -33,6 +34,8 @@ export interface LinhaDesempenho {
   objetivos_pct: number | null;
   visao_pct: number | null;
   erros_jogo: number | null;
+  /** Média do peso nas derrotas (src/analise/peso.ts); 20 = a parte normal de um jogador. */
+  peso_derrota: number | null;
   kda: number;
 }
 
@@ -42,6 +45,7 @@ export interface MelhorPorRota {
   stomp: string | null;
   acertos: string | null;
   menos_erros: string | null;
+  menos_peso: string | null;
 }
 
 interface PartidaBruta {
@@ -115,7 +119,12 @@ export function desempenhoPorCampeao(db: DatabaseSync, f: Filtro, o: { porRota?:
     const visoes: number[] = [];
     const acertos: number[] = [];
     const erros: number[] = [];
+    const pesos: number[] = [];
     for (const p of lista) {
+      if (p.vitoria === 0) {
+        const peso = pesoDaPartida(db, p.match_id, p.participant_id)?.peso;
+        if (peso !== null && peso !== undefined) pesos.push(peso);
+      }
       const partes: number[] = [];
       if (p.kp !== null) {
         const kp = Math.min(p.kp, 100);
@@ -152,6 +161,7 @@ export function desempenhoPorCampeao(db: DatabaseSync, f: Filtro, o: { porRota?:
       objetivos_pct: r1(media(objs)),
       visao_pct: r1(media(visoes)),
       erros_jogo: erros.length ? Math.round((erros.reduce((s, x) => s + x, 0) / erros.length) * 100) / 100 : null,
+      peso_derrota: r1(media(pesos)),
       kda: Math.round((k / Math.max(d, 1)) * 100) / 100,
     });
   }
@@ -162,7 +172,7 @@ export function desempenhoPorCampeao(db: DatabaseSync, f: Filtro, o: { porRota?:
 export function melhoresPorRota(db: DatabaseSync, f: Filtro, minJogos = 1): MelhorPorRota[] {
   const linhas = desempenhoPorCampeao(db, f, { porRota: true, minJogos }).filter((l) => l.posicao);
   const rotas = ['TOP', 'JUNGLE', 'MIDDLE', 'BOTTOM', 'UTILITY'].filter((r) => linhas.some((l) => l.posicao === r));
-  const melhor = (lista: LinhaDesempenho[], valor: (l: LinhaDesempenho) => number | null, menor = false) => {
+  const melhor = (lista: LinhaDesempenho[], valor: (l: LinhaDesempenho) => number | null, menor = false, unidade = '%') => {
     const validos = lista.filter((l) => valor(l) !== null);
     if (!validos.length) return null;
     validos.sort((a, b) => (menor ? valor(a)! - valor(b)! : valor(b)! - valor(a)!) || b.jogos - a.jogos);
@@ -170,7 +180,7 @@ export function melhoresPorRota(db: DatabaseSync, f: Filtro, minJogos = 1): Melh
     // "Mais stomps" com 0% não é destaque de ninguém.
     if (!menor && valor(l) === 0) return null;
     const v = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 }).format(valor(l)!);
-    return `${l.campeao} (${menor ? `${v} erro(s)/jogo` : `${v}%`} em ${l.jogos} jogo${l.jogos > 1 ? 's' : ''})`;
+    return `${l.campeao} (${v}${unidade} em ${l.jogos} jogo${l.jogos > 1 ? 's' : ''})`;
   };
   return rotas.map((posicao) => {
     const daRota = linhas.filter((l) => l.posicao === posicao);
@@ -179,7 +189,8 @@ export function melhoresPorRota(db: DatabaseSync, f: Filtro, minJogos = 1): Melh
       vitoria: melhor(daRota, (l) => l.vitoria_pct),
       stomp: melhor(daRota, (l) => l.stomp_pct),
       acertos: melhor(daRota, (l) => l.acertos_pct),
-      menos_erros: melhor(daRota, (l) => l.erros_jogo, true),
+      menos_erros: melhor(daRota, (l) => l.erros_jogo, true, ' erro(s)/jogo'),
+      menos_peso: melhor(daRota, (l) => l.peso_derrota, true, '% de peso nas derrotas'),
     };
   });
 }

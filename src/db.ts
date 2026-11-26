@@ -118,6 +118,16 @@ CREATE TABLE IF NOT EXISTS jogadores (
 -- Resultado da análise das viradas de ouro, calculado uma vez por partida e jogador.
 -- A chave inclui o limiar, a janela e a versão do algoritmo: mudar qualquer um deles gera uma
 -- análise nova, sem apagar a partida. Regravar a partida (reprocessar) apaga a análise dela.
+-- Peso na derrota / contribuição na vitória (src/analise/peso.ts), calculado uma vez por partida.
+CREATE TABLE IF NOT EXISTS analise_peso (
+  match_id TEXT NOT NULL,
+  participant_id INTEGER NOT NULL,
+  versao INTEGER NOT NULL,
+  json TEXT NOT NULL,
+  calculado_em TEXT NOT NULL,
+  PRIMARY KEY (match_id, participant_id, versao)
+);
+
 CREATE TABLE IF NOT EXISTS analise_viradas (
   match_id TEXT NOT NULL,
   participant_id INTEGER NOT NULL,

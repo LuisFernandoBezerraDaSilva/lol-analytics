@@ -308,7 +308,7 @@ const ABAS = {
       try { sessionStorage.setItem('porRota', porRota.checked ? '1' : '0'); sessionStorage.setItem('minJogosDesempenho', minJogos.value); } catch { /* sem storage */ }
       const r = await api('/api/desempenho', filtros({ porRota: porRota.checked ? '1' : '', minJogos: minJogos.value }));
       const linhas = r.linhas.map((l) => ({ ...l, posicao: l.posicao ? ROTA[l.posicao] || l.posicao : null }));
-      const chaves = ['campeao', ...(porRota.checked ? ['posicao'] : []), 'jogos', 'vitoria_pct', 'stomp_pct', 'stomp_derrota', 'acertos_pct', 'kp_pct', 'objetivos_pct', 'visao_pct', 'erros_jogo', 'kda'];
+      const chaves = ['campeao', ...(porRota.checked ? ['posicao'] : []), 'jogos', 'vitoria_pct', 'stomp_pct', 'stomp_derrota', 'acertos_pct', 'kp_pct', 'objetivos_pct', 'visao_pct', 'erros_jogo', 'peso_derrota', 'kda'];
       const colunas = chaves.map((k) => ({ chave: k, rotulo: k === 'campeao' ? 'Campeão' : k === 'posicao' ? 'Rota' : (r.colunas.find((c) => c.chave === k) || { rotulo: k }).rotulo }));
       const melhores = r.melhores.map((m) => ({ ...m, posicao: ROTA[m.posicao] || m.posicao }));
       caixa.replaceChildren(
@@ -316,14 +316,14 @@ const ABAS = {
           el('h2', {}, 'Seu melhor campeão em cada rota'),
           melhores.length
             ? tabela(
-                [{ chave: 'posicao', rotulo: 'Rota' }, { chave: 'vitoria', rotulo: 'Mais vitórias' }, { chave: 'stomp', rotulo: 'Mais stomps' }, { chave: 'acertos', rotulo: 'Mais acertos' }, { chave: 'menos_erros', rotulo: 'Menos erros' }],
+                [{ chave: 'posicao', rotulo: 'Rota' }, { chave: 'vitoria', rotulo: 'Mais vitórias' }, { chave: 'stomp', rotulo: 'Mais stomps' }, { chave: 'acertos', rotulo: 'Mais acertos' }, { chave: 'menos_erros', rotulo: 'Menos erros' }, { chave: 'menos_peso', rotulo: 'Menos peso nas derrotas' }],
                 melhores,
               )
             : vazio('Sem partidas com rota definida nesses filtros (ARAM e Arena não têm rota).')),
         el('section', { class: 'painel' },
           el('h2', {}, porRota.checked ? 'Por campeão e rota' : 'Por campeão'),
           el('p', { class: 'ajuda' }, 'Clique no título de uma coluna para ordenar: o melhor fica em cima (em Erros/jogo e Stomp e derrota, o menor).'),
-          tabela(colunas, linhas, { menorMelhor: ['erros_jogo', 'stomp_derrota'], ordenarPor: 'vitoria_pct' })),
+          tabela(colunas, linhas, { menorMelhor: ['erros_jogo', 'stomp_derrota', 'peso_derrota'], ordenarPor: 'vitoria_pct' })),
       );
     };
     porRota.addEventListener('change', () => carregar().catch((e) => caixa.replaceChildren(el('p', { class: 'erro' }, e.message))));
@@ -336,6 +336,7 @@ const ABAS = {
         el('li', {}, '% Stomp: partidas em que você chegou aos 15 minutos com 1.000 de ouro ou mais sobre o oponente de rota, ganhando ou perdendo o jogo. "Stomp e derrota" conta as que terminaram em derrota mesmo assim.'),
         el('li', {}, '% Acertos (macro): média de três participações. Abates do time (% Part.), objetivos do time (dragões, arautos, vastilarvas, barão e torres) e visão comparada ao oponente de rota (50% = igual a ele).'),
         el('li', {}, 'Erros/jogo: viradas de ouro contra você em que você morreu (gank, 1x1 ou luta), pela análise das viradas. Menor é melhor.'),
+        el('li', {}, 'Peso nas derrotas: média da sua parte nas derrotas, onde 20% é a parte normal de um dos 5 jogadores. Junta o ouro que as suas mortes entregaram, a desvantagem da sua rota, as mortes antes de barão, ancião ou inibidor, e desconta o seu dano, abates e objetivos. Abra o placar de uma derrota para ver o detalhe. Menor é melhor.'),
         el('li', {}, 'Stomp, objetivos, visão e erros só contam partidas com timeline e oponente de rota.'),
       ));
     return el('div', {},
@@ -462,8 +463,9 @@ const ABAS = {
   async partidas() {
     const r = await api('/api/recentes', filtros({ n: 100 }));
     return el('section', { class: 'painel' }, el('h2', {}, 'Partidas'), el('p', { class: 'ajuda' }, 'Clique numa partida para ver o placar completo.'),
-      tabela(colunasDe(r).filter((c) => c.chave !== 'match_id'), r.linhas, {
+      tabela(colunasDe(r).filter((c) => c.chave !== 'match_id' && c.chave !== 'participant_id'), r.linhas, {
         cores: ['dif_ouro_10'],
+        menorMelhor: ['peso'],
         aoClicar: (l) => abrirPlacar(l.match_id),
       }));
   },
@@ -553,11 +555,51 @@ async function painelJogador(puuid, consultar) {
       : vazio('Nenhuma partida com esses filtros.'),
     el('div', { class: 'grade' },
       el('div', {}, el('h3', {}, 'Campeões'), tabela(colunasDe(camp, ['grupo', 'jogos', 'vitoria_pct', 'kda', 'ouro_min', 'cs_min']).map((c) => (c.chave === 'grupo' ? { ...c, rotulo: 'Campeão' } : c)), camp.linhas)),
-      el('div', {}, el('h3', {}, 'Partidas recentes'), tabela(colunasDe(rec, ['data', 'campeao', 'oponente', 'resultado', 'kda_linha', 'ouro_min']), rec.linhas, { aoClicar: (l) => abrirPlacar(l.match_id, puuid) }))),
+      el('div', {}, el('h3', {}, 'Partidas recentes'), tabela(colunasDe(rec, ['data', 'campeao', 'oponente', 'resultado', 'kda_linha', 'ouro_min', 'veredito']), rec.linhas, { aoClicar: (l) => abrirPlacar(l.match_id, puuid) }))),
   );
 }
 
 // ------------------------------------------------------------ placar
+
+/** Quadro "Peso na derrota" (ou "Contribuição na vitória") de uma partida. */
+function painelPeso(p, quem) {
+  const derrota = !p.vitoria;
+  const valor = derrota ? p.peso : p.contribuicao;
+  const titulo = derrota
+    ? `Peso na derrota: ${num(p.peso)}% · inocência ${num(p.inocencia)}%`
+    : `Contribuição na vitória: ${valor === null ? '-' : `${num(valor)}%`}`;
+  // Barra de 0 a 50%, com a marca da parte normal (20%).
+  const largura = Math.min(100, ((valor ?? 0) / 50) * 100);
+  const cor = derrota ? (p.peso > 24 ? 'var(--neg)' : p.peso < 16 ? 'var(--pos)' : 'var(--destaque)') : (valor >= 22 ? 'var(--pos)' : 'var(--destaque)');
+  const linhas = p.componentes.map((c) => ({
+    nome: c.nome,
+    tipo: c.tipo === 'culpa' ? 'Culpa' : 'Contribuição',
+    suaParte: c.suaParte,
+    oponente: c.parteDoOponente,
+    ajustado: c.ajustado,
+    detalhe: c.detalhe,
+  }));
+  return el('section', { class: 'painel peso' },
+    el('div', { class: 'cab-dialogo' },
+      el('div', {}, el('h3', {}, titulo), el('p', { class: 'ajuda' }, `Parte de ${quem} no resultado. A parte normal de cada um dos 5 jogadores é 20%.`)),
+      el('span', { class: 'etiqueta' }, p.veredito)),
+    el('div', { class: 'medidor', title: `${num(valor)}% (marca: 20%)` }, el('span', { style: `width:${largura}%;background:${cor}` }), el('i', { style: 'left:40%' })),
+    tabela(
+      [
+        { chave: 'nome', rotulo: 'O que entra' },
+        { chave: 'tipo', rotulo: 'Lado' },
+        { chave: 'suaParte', rotulo: 'Sua parte no time %' },
+        { chave: 'oponente', rotulo: 'Oponente de posição %' },
+        { chave: 'ajustado', rotulo: 'Na régua (20 = normal)' },
+      ],
+      linhas,
+    ),
+    el('ul', { class: 'ajuda' }, linhas.map((l) => el('li', {}, l.detalhe))),
+    el('p', { class: 'ajuda' }, derrota
+      ? 'Culpa acima de 20 e contribuição abaixo de 20 aumentam o peso. É uma estimativa por números: não vê escolha de campeões, chamadas nem jogar do lado fraco.'
+      : 'Contribuição acima de 20 = você fez mais que a sua parte na vitória.'),
+  );
+}
 
 let nomesItens = null;
 
@@ -604,12 +646,19 @@ async function abrirPlacar(matchId, puuid) {
     );
     const focoOuEu = p.times.flatMap((t) => t.jogadores).find((j) => j.foco || j.eu);
     const extras = [];
+    let quadroPeso = null;
+    if (focoOuEu && !p.remake) {
+      const qp = new URLSearchParams({ match: p.matchId });
+      if (!focoOuEu.eu) qp.set('puuid', focoOuEu.puuid);
+      const peso = await api('/api/peso', qp).catch(() => null);
+      if (peso) quadroPeso = painelPeso(peso, focoOuEu.eu ? 'você' : focoOuEu.riotId);
+    }
     if (p.temTimeline && focoOuEu && focoOuEu.posicao) {
       const caixaOuro = el('div', {});
       const botao = el('button', { class: 'secundario', type: 'button', onclick: () => { botao.remove(); carregarDetalhe(caixaOuro, p.matchId, focoOuEu.eu ? undefined : focoOuEu.puuid, false); } }, `Ver viradas de ouro de ${focoOuEu.eu ? 'você' : focoOuEu.riotId}`);
       extras.push(el('div', { style: 'margin-top:16px' }, botao, caixaOuro));
     }
-    caixa.replaceChildren(...times, ...extras);
+    caixa.replaceChildren(...(quadroPeso ? [quadroPeso] : []), ...times, ...extras);
   } catch (e) {
     $('#pTitulo').textContent = 'Partida';
     caixa.replaceChildren(el('p', { class: 'erro' }, e.message));

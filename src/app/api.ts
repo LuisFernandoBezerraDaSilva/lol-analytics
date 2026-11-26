@@ -2,6 +2,7 @@ import { resolve } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { DataDragon } from '../ddragon.ts';
 import { atualizarJogador, atualizarRegistrados, consultarJogador, listarJogadores, registrarJogador } from '../jogadores.ts';
+import { pesoDaPartida } from '../analise/peso.ts';
 import { desempenhoPorCampeao, melhoresPorRota } from '../relatorios/desempenho.ts';
 import { placar } from '../relatorios/placar.ts';
 import { analiseDaPartida, analisarPartida, calcularAnalisesNovas, NOME_CAUSA, PADRAO_ANALISE, partidasAnalisaveis, resumirCausas, type OpcoesAnalise } from '../analise/ouro.ts';
@@ -334,8 +335,27 @@ export function criarApi(db: DatabaseSync, deps: Dependencias = {}) {
         }
         case 'GET /api/resumo':
           return json(resumo(db, filtroDaQuery(q)) ?? {});
-        case 'GET /api/recentes':
-          return json(tabela(recentes(db, filtroDaQuery(q), inteiro(q, 'n', 30))));
+        case 'GET /api/recentes': {
+          // Cada partida ganha o veredito e, nas derrotas, o peso (calculado uma vez e salvo).
+          const linhas = recentes(db, filtroDaQuery(q), inteiro(q, 'n', 30)).map((l) => {
+            const p = pesoDaPartida(db, String(l.match_id), Number(l.participant_id));
+            return { ...l, peso: p?.peso ?? null, veredito: p?.veredito ?? null };
+          });
+          return json(tabela(linhas));
+        }
+        case 'GET /api/peso': {
+          const id = q.get('match') ?? '';
+          const puuid = q.get('puuid');
+          const alvo = (
+            puuid
+              ? db.prepare('SELECT participant_id FROM participantes WHERE match_id = ? AND puuid = ?').get(id, puuid)
+              : db.prepare('SELECT participant_id FROM v_minhas_partidas WHERE match_id = ? LIMIT 1').get(id)
+          ) as { participant_id: number } | undefined;
+          if (!alvo) throw new ErroHttp(404, 'Partida não encontrada para esse jogador.');
+          const p = pesoDaPartida(db, id, alvo.participant_id);
+          if (!p) throw new ErroHttp(404, 'Sem cálculo para essa partida (remake?).');
+          return json(p);
+        }
         case 'GET /api/curva':
           return json(tabela(curvaDeOuro(db, filtroDaQuery(q), inteiro(q, 'ate', 30))));
         case 'GET /api/abates':

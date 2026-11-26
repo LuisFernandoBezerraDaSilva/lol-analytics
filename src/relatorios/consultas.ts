@@ -62,7 +62,7 @@ export function recentes(db: DatabaseSync, f: Filtro, n = 20): Linha[] {
   const w = where(f);
   return db
     .prepare(
-      `SELECT match_id, data, campeao, posicao, oponente,
+      `SELECT match_id, participant_id, data, campeao, posicao, oponente,
          CASE WHEN vitoria = 1 THEN 'V' ELSE 'D' END AS resultado,
          kills || '/' || deaths || '/' || assists AS kda_linha,
          duracao_min, ouro_min, cs_min, dano_min, kp_pct, dif_ouro_10

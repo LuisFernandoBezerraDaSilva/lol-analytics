@@ -40,6 +40,20 @@ a lista de campeões é a do jogador consultado. Na aba Elo, a fila escolhe Solo
     oponente de rota (50% = igual a ele).
   - **Erros/jogo:** viradas de ouro contra você em que você morreu (gank, 1x1 ou luta).
     Menor é melhor.
+  - **Peso nas derrotas:** a média do peso (abaixo) nas derrotas daquele campeão. Menor é melhor.
+- **Peso na derrota:** em cada derrota, uma estimativa da sua parte no resultado. A régua é 20%,
+  a parte normal de cada um dos 5 jogadores. Aparece na lista de partidas e, com o detalhe, no
+  placar. Nas vitórias, o mesmo cálculo mostra a sua **contribuição** ("Carregou", "Na média"...).
+  - **Culpa:** a sua parte no ouro que as mortes do time entregaram (bounty e shutdown), na
+    desvantagem das rotas do time aos 15 minutos e nas mortes do time no minuto antes de o inimigo
+    pegar barão, dragão ancião ou inibidor.
+  - **Contribuição:** a sua parte no dano, nos abates e assistências e nos objetivos do time.
+  - **Ajuste pela posição:** ouro entregue, dano, abates e objetivos são comparados com a parte
+    do jogador da mesma posição no outro time. Assim, suporte e caçador não saem prejudicados.
+  - **Peso** = 20 + (culpa − 20) ÷ 2 − (contribuição − 20) ÷ 2, entre 0 e 100.
+    **Inocência** = (40 − peso) ÷ 40: peso 20 (a média) dá 50% de inocência.
+  - É uma estimativa por números: não vê escolha de campeões, chamadas nem quem desistiu.
+    Serve para você avaliar o próprio jogo, não para dar nota aos colegas.
 
 - **Placar completo:** clique numa partida para ver os 10 jogadores com K/D/A, CS, ouro, dano,
   visão e itens (com ícones). Clique no nome de alguém para consultar esse jogador.
@@ -245,6 +259,6 @@ associated properties are trademarks or registered trademarks of Riot Games, Inc
 ## Desenvolvimento
 
 ```powershell
-npm test          # 68 testes com partidas sintéticas; nenhum chama a Riot
+npm test          # 75 testes com partidas sintéticas; nenhum chama a Riot
 npm run typecheck
 ```
