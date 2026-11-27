@@ -1,5 +1,6 @@
 import { resolve } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
+import { atualizarClasses } from '../classes.ts';
 import { DataDragon } from '../ddragon.ts';
 import { atualizarJogador, atualizarRegistrados, consultarJogador, listarJogadores, registrarJogador } from '../jogadores.ts';
 import { pesoDaPartida } from '../analise/peso.ts';
@@ -52,7 +53,7 @@ export interface Dependencias {
   /** Onde fica o .env (testes usam um arquivo temporário). */
   arquivoEnv?: string;
   /** Ícones e nomes de itens (testes usam um falso). */
-  ddragon?: Pick<DataDragon, 'iconeCampeao' | 'iconeItem' | 'itens'>;
+  ddragon?: Pick<DataDragon, 'iconeCampeao' | 'iconeItem' | 'itens' | 'classes'>;
 }
 
 class ErroHttp extends Error {
@@ -175,6 +176,8 @@ export function criarApi(db: DatabaseSync, deps: Dependencias = {}) {
         log('Atualizando os jogadores registrados em memória…');
         await atualizarRegistrados(db, riot as ClienteRiot, 20, log);
       }
+      // As classes dos campeões entram antes do cálculo do peso (que depende delas).
+      await atualizarClasses(db, ddragon).catch(() => 0);
       const analises = calcularAnalisesNovas(db);
       log(`Análise de ouro: ${analises} partida(s) nova(s) analisada(s); as anteriores continuam salvas.`);
       log('Pronto.');
@@ -435,5 +438,8 @@ export function criarApi(db: DatabaseSync, deps: Dependencias = {}) {
     }
   }
 
-  return { tratar, sync };
+  /** Baixa as classes dos campeões (uma vez por versão do jogo); chamado ao abrir o app. */
+  const prepararClasses = () => atualizarClasses(db, ddragon).catch(() => 0);
+
+  return { tratar, sync, prepararClasses };
 }

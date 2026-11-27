@@ -47,9 +47,17 @@ a lista de campeões é a do jogador consultado. Na aba Elo, a fila escolhe Solo
   - **Culpa:** a sua parte no ouro que as mortes do time entregaram (bounty e shutdown), na
     desvantagem das rotas do time aos 15 minutos e nas mortes do time no minuto antes de o inimigo
     pegar barão, dragão ancião ou inibidor.
-  - **Contribuição:** a sua parte no dano, nos abates e assistências e nos objetivos do time.
-  - **Ajuste pela posição:** ouro entregue, dano, abates e objetivos são comparados com a parte
-    do jogador da mesma posição no outro time. Assim, suporte e caçador não saem prejudicados.
+  - **Contribuição:** a sua parte no time em vários itens, com pesos pela **classe do campeão**
+    (Data Dragon). Assassino pesa abates; mago e atirador, dano; lutador, dano e o quanto
+    aguentou; tanque, dano recebido e mitigado e controle de grupo; suporte, cura e escudo em
+    aliados e visão. Campeão com duas classes mistura os pesos (2/3 e 1/3), e a classe Suporte só
+    conta jogando de suporte (o Xerath "Mago/Suporte" no mid é avaliado como mago). Nos abates,
+    a assistência vale metade. Objetivos só entram se o time teve participações suficientes.
+  - **Régua do próprio campeão:** cada item é comparado com o que aquele campeão costuma fazer
+    naquela posição, pela média dos outros jogadores das partidas do seu banco (as suas contas
+    ficam de fora, para você não ser comparado com você mesmo). Com poucos jogos do campeão, usa
+    a média da classe na posição, depois a da posição e, por último, valores iniciais. O placar
+    mostra de onde veio cada referência.
   - **Peso** = 20 + (culpa − 20) ÷ 2 − (contribuição − 20) ÷ 2, entre 0 e 100.
     **Inocência** = (40 − peso) ÷ 40: peso 20 (a média) dá 50% de inocência.
   - É uma estimativa por números: não vê escolha de campeões, chamadas nem quem desistiu.
@@ -259,6 +267,6 @@ associated properties are trademarks or registered trademarks of Riot Games, Inc
 ## Desenvolvimento
 
 ```powershell
-npm test          # 75 testes com partidas sintéticas; nenhum chama a Riot
+npm test          # 81 testes com partidas sintéticas; nenhum chama a Riot
 npm run typecheck
 ```

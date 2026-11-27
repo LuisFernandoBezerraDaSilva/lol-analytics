@@ -53,8 +53,9 @@ function derivar(db: DatabaseSync, partida: Partida, timeline: Timeline | null):
 
   const insP = db.prepare(
     `INSERT INTO participantes (match_id, participant_id, puuid, riot_id, time_id, campeao, campeao_id, posicao,
-       oponente_id, vitoria, kills, deaths, assists, ouro, cs, dano_campeoes, dano_recebido, visao, wards, nivel)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       oponente_id, vitoria, kills, deaths, assists, ouro, cs, dano_campeoes, dano_recebido, visao, wards, nivel,
+       mitigado, cura_aliados, escudo_aliados, cc_segundos)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   const todos = partida.info.participants;
   for (const p of todos) {
@@ -79,6 +80,10 @@ function derivar(db: DatabaseSync, partida: Partida, timeline: Timeline | null):
       p.visionScore,
       p.wardsPlaced,
       p.champLevel,
+      p.damageSelfMitigated ?? 0,
+      p.totalHealsOnTeammates ?? 0,
+      p.totalDamageShieldedOnTeammates ?? 0,
+      p.timeCCingOthers ?? 0,
     );
   }
 

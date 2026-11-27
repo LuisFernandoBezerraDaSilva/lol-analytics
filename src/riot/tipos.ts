@@ -26,6 +26,10 @@ export interface Participante {
   visionScore: number;
   wardsPlaced: number;
   champLevel: number;
+  damageSelfMitigated?: number;
+  totalHealsOnTeammates?: number;
+  totalDamageShieldedOnTeammates?: number;
+  timeCCingOthers?: number;
   gameEndedInEarlySurrender?: boolean;
   riotIdGameName?: string;
   riotIdTagline?: string;

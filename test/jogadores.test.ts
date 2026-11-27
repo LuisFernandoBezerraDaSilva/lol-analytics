@@ -164,7 +164,7 @@ describe('API: jogadores e placar', () => {
   it('consulta em segundo plano, abre o jogador, registra e mostra o placar', async () => {
     const db = banco();
     const riot = riotFalsa();
-    const ddragon = { iconeCampeao: async () => null, iconeItem: async (id: string) => (id === '3089' ? Buffer.from([9]) : null), itens: async () => ({}) };
+    const ddragon = { iconeCampeao: async () => null, iconeItem: async (id: string) => (id === '3089' ? Buffer.from([9]) : null), itens: async () => ({}), classes: async () => null };
     const api = criarApi(db, { criarRiot: () => ({ riot, riotIds: [{ gameName: 'Eu', tagLine: 'BR1' }] }), ddragon });
     const chamar = async (metodo: string, url: string, corpo?: unknown) => {
       const u = new URL(url, 'http://x');

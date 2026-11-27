@@ -85,6 +85,16 @@ export class DataDragon {
     return this.lerOuBaixar(`${v}/item/${id}.png`, `${CDN}/cdn/${v}/img/item/${id}.png`);
   }
 
+  /** Classes de cada campeão (id do campeão → tags, ex.: Xerath → ["Mage"]). Vazio sem internet nem cache. */
+  async classes(): Promise<{ versao: string; tags: Record<string, string[]> } | null> {
+    const v = await this.versao();
+    if (!v) return null;
+    const dados = await this.lerOuBaixar(`${v}/champion_en_US.json`, `${CDN}/cdn/${v}/data/en_US/champion.json`);
+    if (!dados) return null;
+    const json = JSON.parse(dados.toString('utf8')) as { data: Record<string, { id: string; tags: string[] }> };
+    return { versao: v, tags: Object.fromEntries(Object.values(json.data).map((c) => [c.id, c.tags])) };
+  }
+
   /** Nomes dos itens em português (id → nome). */
   async itens(): Promise<Record<string, string>> {
     if (this.itensCache) return this.itensCache;

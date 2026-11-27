@@ -61,9 +61,21 @@ CREATE TABLE IF NOT EXISTS participantes (
   visao INTEGER NOT NULL,
   wards INTEGER NOT NULL,
   nivel INTEGER NOT NULL,
+  -- Para avaliar cada função: tanque (mitigado), suporte (cura/escudo em aliados), controle.
+  mitigado INTEGER NOT NULL DEFAULT 0,
+  cura_aliados INTEGER NOT NULL DEFAULT 0,
+  escudo_aliados INTEGER NOT NULL DEFAULT 0,
+  cc_segundos INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (match_id, participant_id)
 );
 CREATE INDEX IF NOT EXISTS ix_participantes_puuid ON participantes (puuid);
+
+-- Classes dos campeões (tags do Data Dragon: Assassin, Fighter, Mage, Marksman, Support, Tank).
+CREATE TABLE IF NOT EXISTS campeoes_classes (
+  campeao TEXT PRIMARY KEY,
+  tags TEXT NOT NULL,
+  versao TEXT NOT NULL
+);
 
 -- Um quadro por minuto da timeline, por jogador.
 CREATE TABLE IF NOT EXISTS frames (
@@ -197,8 +209,42 @@ export function abrirBanco(caminho: string): DatabaseSync {
   if (caminho !== ':memory:') mkdirSync(dirname(caminho), { recursive: true });
   const db = new DatabaseSync(caminho);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
+  migrarColunasNovas(db);
   db.exec(ESQUEMA);
   return db;
+}
+
+/** Colunas de participantes que entraram depois da primeira versão, com o campo da Riot de origem. */
+const COLUNAS_NOVAS: Record<string, string> = {
+  mitigado: 'damageSelfMitigated',
+  cura_aliados: 'totalHealsOnTeammates',
+  escudo_aliados: 'totalDamageShieldedOnTeammates',
+  cc_segundos: 'timeCCingOthers',
+};
+
+/**
+ * Banco antigo: cria as colunas novas e preenche a partir do JSON da partida já salvo
+ * (uma vez, sem baixar nada da Riot).
+ */
+function migrarColunasNovas(db: DatabaseSync): void {
+  const existe = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'participantes'").get();
+  if (!existe) return;
+  const atuais = new Set((db.prepare('PRAGMA table_info(participantes)').all() as Array<{ name: string }>).map((c) => c.name));
+  const faltam = Object.keys(COLUNAS_NOVAS).filter((c) => !atuais.has(c));
+  if (faltam.length === 0) return;
+  emTransacao(db, () => {
+    for (const c of faltam) db.exec(`ALTER TABLE participantes ADD COLUMN ${c} INTEGER NOT NULL DEFAULT 0`);
+    const upd = db.prepare(
+      'UPDATE participantes SET mitigado = ?, cura_aliados = ?, escudo_aliados = ?, cc_segundos = ? WHERE match_id = ? AND participant_id = ?',
+    );
+    for (const { match_id, json } of db.prepare('SELECT match_id, json FROM partidas').all() as Array<{ match_id: string; json: string }>) {
+      const partida = JSON.parse(json) as { info: { participants: Array<Record<string, unknown>> } };
+      for (const p of partida.info.participants) {
+        const v = (campo: string) => (typeof p[campo] === 'number' ? (p[campo] as number) : 0);
+        upd.run(v('damageSelfMitigated'), v('totalHealsOnTeammates'), v('totalDamageShieldedOnTeammates'), v('timeCCingOthers'), match_id, Number(p.participantId));
+      }
+    }
+  });
 }
 
 export function emTransacao<T>(db: DatabaseSync, fn: () => T): T {

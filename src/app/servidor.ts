@@ -133,6 +133,7 @@ servidor.on('error', (e: NodeJS.ErrnoException) => {
 });
 
 servidor.listen(porta, HOST, () => {
+  void api.prepararClasses();
   const url = `http://${HOST}:${porta}`;
   console.log(`lol analytics rodando em ${url}  (Ctrl+C para fechar)`);
   abrirNavegador(url);

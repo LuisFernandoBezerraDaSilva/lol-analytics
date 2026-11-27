@@ -2,7 +2,9 @@ import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import type { DatabaseSync } from 'node:sqlite';
 import { analiseDaPartida, analisarPartida, calcularAnalisesNovas, NOME_CAUSA, PADRAO_ANALISE, partidasAnalisaveis, relogio, resumirCausas, type OpcoesAnalise } from './analise/ouro.ts';
+import { atualizarClasses } from './classes.ts';
 import { carregarConfig, carregarDbPath } from './config.ts';
+import { DataDragon } from './ddragon.ts';
 import { abrirBanco } from './db.ts';
 import { idDaFila, nomeDaFila } from './filas.ts';
 import { reprocessarTudo } from './processar.ts';
@@ -219,6 +221,7 @@ async function cmdSync(a: Args): Promise<void> {
   const n = await registrarElo(db, riot);
   const seg = Math.round((Date.now() - inicio) / 1000);
   console.log(`Elo registrado (${n} fila(s)). ${riot.requisicoes} requisições em ${seg}s.`);
+  await atualizarClasses(db, new DataDragon(resolve(process.cwd(), 'data', 'ddragon'))).catch(() => 0);
   console.log(`Análise de ouro: ${calcularAnalisesNovas(db)} partida(s) nova(s) analisada(s); as anteriores continuam salvas.`);
   if (Number.isFinite(max) && res.some((r) => r.novas >= max)) {
     console.log('Ainda há partidas antigas: rode o sync de novo (ou use --tudo).');
